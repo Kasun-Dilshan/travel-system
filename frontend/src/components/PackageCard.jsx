@@ -1,6 +1,7 @@
 import { motion } from 'framer-motion';
 import { MapPin, Star, ArrowRight } from 'lucide-react';
 import { TRANSLATIONS } from '../data/translations';
+import { mediaUrl } from '../config';
 
 export default function PackageCard({ pkg, image, onViewDetails, lang = 'en' }) {
   const t = TRANSLATIONS[lang] || TRANSLATIONS.en;
@@ -33,7 +34,7 @@ export default function PackageCard({ pkg, image, onViewDetails, lang = 'en' }) 
         <motion.img
           whileHover={{ scale: 1.1 }}
           transition={{ duration: 0.6 }}
-          src={image}
+          src={mediaUrl(image)}
           alt={displayTitle}
           style={{
             width: '100%',

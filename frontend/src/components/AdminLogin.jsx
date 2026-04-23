@@ -20,10 +20,16 @@ export default function AdminLogin({ onLogin }) {
         body: JSON.stringify({ password })
       });
 
-      const data = await res.json();
+      const contentType = res.headers.get('content-type') || '';
+      const isJson = contentType.toLowerCase().includes('application/json');
+      const data = isJson ? await res.json() : await res.text();
 
       if (!res.ok) {
-        throw new Error(data.message || 'Invalid credentials');
+        const message =
+          isJson
+            ? (data?.message || 'Invalid credentials')
+            : 'Server returned HTML instead of JSON. Check that /api routes are not being redirected to the frontend.';
+        throw new Error(message);
       }
 
       // Store the JWT token

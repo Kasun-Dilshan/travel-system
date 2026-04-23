@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { X, Clock, MapPin, CheckCircle2, ShieldCheck, ChevronLeft, ChevronRight, Zap } from 'lucide-react';
 import MapComponent from './MapComponent';
 import { TRANSLATIONS } from '../data/translations';
+import { mediaUrl } from '../config';
 
 export default function TourModal({ isOpen, onClose, tour, lang = 'en' }) {
   const navigate = useNavigate();
@@ -34,7 +35,7 @@ export default function TourModal({ isOpen, onClose, tour, lang = 'en' }) {
   const rawPath = tour.route?.path ?? stops.map((s) => ({ lat: s.lat, lng: s.lng }));
   const hasRoute = Array.isArray(stops) && stops.length > 0 && Array.isArray(rawPath) && rawPath.length > 0;
 
-  const images = tour.images || [tour.image];
+  const images = (tour.images || [tour.image]).map((u) => mediaUrl(u));
   const hasMultipleImages = images.length > 1;
 
   const nextImage = (e) => {

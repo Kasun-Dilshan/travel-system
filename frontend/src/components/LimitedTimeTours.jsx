@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Timer, Zap, ArrowRight, ExternalLink } from 'lucide-react';
-import { INBOUND_PACKAGES, OUTBOUND_PACKAGES } from '../data/tours';
 import { TRANSLATIONS } from '../data/translations';
+import API_URL, { mediaUrl } from '../config';
 
 const CountdownTimer = ({ expiryDate, labels }) => {
   const calculateTimeLeft = () => {
@@ -66,8 +66,24 @@ const CountdownTimer = ({ expiryDate, labels }) => {
 
 export default function LimitedTimeTours({ onOpenTour, currentLanguage = 'en' }) {
   const t = TRANSLATIONS[currentLanguage] || TRANSLATIONS.en;
-  const allPackages = [...INBOUND_PACKAGES, ...OUTBOUND_PACKAGES];
-  const flashSales = allPackages.filter(p => p.isLimitedTime);
+  const [dynamicPackages, setDynamicPackages] = useState([]);
+
+  useEffect(() => {
+    let isMounted = true;
+    (async () => {
+      try {
+        const res = await fetch(`${API_URL}/packages`);
+        if (!res.ok) throw new Error('Failed to fetch packages');
+        const data = await res.json();
+        if (isMounted && Array.isArray(data)) setDynamicPackages(data);
+      } catch {
+        // If fetch fails, show nothing (no demo data)
+      }
+    })();
+    return () => { isMounted = false; };
+  }, []);
+
+  const flashSales = dynamicPackages.filter(p => p.isLimitedTime);
 
   const timerLabels = {
     days: t.timerDays || 'D',
@@ -135,7 +151,7 @@ export default function LimitedTimeTours({ onOpenTour, currentLanguage = 'en' })
           
           return (
             <motion.div
-              key={pkg.id}
+              key={pkg._id || pkg.id}
               initial={{ opacity: 0, y: 30 }}
               whileInView={{ opacity: 1, y: 0 }}
               viewport={{ once: true }}
@@ -154,7 +170,7 @@ export default function LimitedTimeTours({ onOpenTour, currentLanguage = 'en' })
                 <motion.img 
                   whileHover={{ scale: 1.1 }}
                   transition={{ duration: 0.8 }}
-                  src={pkg.image} 
+                  src={mediaUrl(pkg.image)} 
                   style={{ width: '100%', height: '100%', objectFit: 'cover' }}
                 />
                 

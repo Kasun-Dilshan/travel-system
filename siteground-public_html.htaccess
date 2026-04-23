@@ -1,0 +1,13 @@
+RewriteEngine On
+
+# IMPORTANT: keep backend routes working under /api/*
+RewriteRule ^api/ - [L]
+
+# Serve existing files/folders directly
+RewriteCond %{REQUEST_FILENAME} -f [OR]
+RewriteCond %{REQUEST_FILENAME} -d
+RewriteRule ^ - [L]
+
+# SPA fallback (React Router): everything else -> index.html
+RewriteRule ^ index.html [L]
+

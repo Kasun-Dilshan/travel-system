@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import API_URL from '../config';
+import API_URL, { mediaUrl } from '../config';
 import AdminLogin from '../components/AdminLogin';
 import { RevenueChart, CategoryDistribution } from '../components/DashboardCharts';
 import {
@@ -27,6 +27,22 @@ async function apiFetch(url, options = {}) {
   return res.json();
 }
 
+async function uploadAdminImage(file) {
+  const token = localStorage.getItem('admin_token');
+  const body = new FormData();
+  body.append('image', file);
+  const res = await fetch(`${API_URL}/upload`, {
+    method: 'POST',
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    body,
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.message || `Upload failed: ${res.status}`);
+  }
+  return res.json();
+}
+
 // ─── Main Component ─────────────────────────────────────────────────────────
 export default function AdminDashboard() {
   const [isLoggedIn, setIsLoggedIn] = useState(() => {
@@ -46,6 +62,7 @@ export default function AdminDashboard() {
   const [isPkgModalOpen, setIsPkgModalOpen] = useState(false);
   const [currentPackage, setCurrentPackage] = useState(null);
   const [isSaving, setIsSaving] = useState(false);
+  const [isUploadingCover, setIsUploadingCover] = useState(false);
   const emptyPkg = { title: '', price: 0, image: '', gallery: [], duration: '', description: '', category: 'Inbound', type: 'Round', inclusions: [], exclusions: [], highlights: [], itinerary: [], featured: false, isLimitedTime: false, discountPercentage: 0, seoTitle: '', seoDescription: '' };
   const [pkgForm, setPkgForm] = useState(emptyPkg);
 
@@ -134,8 +151,31 @@ export default function AdminDashboard() {
     setIsPkgModalOpen(true);
   };
 
+  const handlePkgCoverFile = async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+      alert('Please choose an image file (JPEG, PNG, WebP, or GIF).');
+      return;
+    }
+    setIsUploadingCover(true);
+    try {
+      const { url } = await uploadAdminImage(file);
+      setPkgForm(p => ({ ...p, image: url }));
+    } catch (err) {
+      alert(err.message || 'Upload failed');
+    } finally {
+      setIsUploadingCover(false);
+    }
+  };
+
   const handleSavePackage = async (e) => {
     e.preventDefault();
+    if (!String(pkgForm.image || '').trim()) {
+      alert('Please upload a cover image.');
+      return;
+    }
     setIsSaving(true);
     try {
       const method = currentPackage ? 'PUT' : 'POST';
@@ -419,7 +459,7 @@ export default function AdminDashboard() {
                   {packages.map(p => (
                     <div key={p._id} className="admin-card" style={{ padding: '0', overflow: 'hidden' }}>
                       <div style={{ position: 'relative', height: '180px' }}>
-                        <img src={p.image} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                        <img src={mediaUrl(p.image)} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                         <div style={{ position: 'absolute', top: '0.75rem', right: '0.75rem', display: 'flex', gap: '0.4rem' }}>
                           <span style={{ background: '#0f172a', color: 'white', padding: '0.25rem 0.6rem', borderRadius: '1rem', fontSize: '0.7rem', fontWeight: '800' }}>{p.category}</span>
                           {p.featured && <span style={{ background: '#f59e0b', color: 'white', padding: '0.25rem 0.6rem', borderRadius: '1rem', fontSize: '0.7rem', fontWeight: '800' }}>⭐ Featured</span>}
@@ -661,7 +701,22 @@ export default function AdminDashboard() {
                   <input type="number" min={0} max={100} className="form-control" value={pkgForm.discountPercentage} onChange={e => setPkgForm(p => ({ ...p, discountPercentage: Number(e.target.value) }))} />
                 </FormField>
               )}
-              <FormField label="Cover Image URL"><input required className="form-control" value={pkgForm.image} onChange={e => setPkgForm(p => ({ ...p, image: e.target.value }))} placeholder="https://..." /></FormField>
+              <FormField label="Cover image">
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '0.75rem' }}>
+                    <input id="pkg-cover-file" type="file" accept="image/jpeg,image/png,image/webp,image/gif" style={{ display: 'none' }} onChange={handlePkgCoverFile} disabled={isUploadingCover} />
+                    <label htmlFor="pkg-cover-file" className="btn" style={{ cursor: isUploadingCover ? 'wait' : 'pointer', margin: 0, display: 'inline-flex', alignItems: 'center', gap: '0.5rem', background: '#f1f5f9', color: '#475569' }}>
+                      <Image size={18} /> {isUploadingCover ? 'Uploading…' : 'Choose file'}
+                    </label>
+                  </div>
+                  {pkgForm.image && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}>
+                      <img src={mediaUrl(pkgForm.image)} alt="" style={{ width: '120px', height: '72px', objectFit: 'cover', borderRadius: '0.5rem', border: '1px solid #e2e8f0' }} />
+                      <button type="button" className="btn" style={{ fontSize: '0.85rem', padding: '0.35rem 0.75rem', background: '#fef2f2', color: '#b91c1c' }} onClick={() => setPkgForm(p => ({ ...p, image: '' }))}>Remove</button>
+                    </div>
+                  )}
+                </div>
+              </FormField>
               <FormField label="Description">
                 <textarea required className="form-control" rows={3} style={{ resize: 'vertical' }} value={pkgForm.description} onChange={e => setPkgForm(p => ({ ...p, description: e.target.value }))} />
               </FormField>

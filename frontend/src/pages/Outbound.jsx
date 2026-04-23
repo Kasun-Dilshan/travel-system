@@ -2,7 +2,6 @@ import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import PackageCard from '../components/PackageCard';
 import TourModal from '../components/TourModal';
-import { OUTBOUND_PACKAGES } from '../data/tours';
 import ContactSection from '../components/ContactSection';
 import LanguagePicker from '../components/LanguagePicker';
 import { TRANSLATIONS } from '../data/translations';
@@ -77,7 +76,7 @@ export default function Outbound({ selectedLanguage = 'en', setSelectedLanguage 
     }
   };
 
-  const allPackages = dynamicPackages.length > 0 ? dynamicPackages : OUTBOUND_PACKAGES;
+  const allPackages = dynamicPackages;
   const roundTours = allPackages.filter(p => p.type === 'Round');
   const dayTours = allPackages.filter(p => !p.type || p.type === 'Day');
 

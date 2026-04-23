@@ -2,6 +2,7 @@ import React from 'react';
 import { motion } from 'framer-motion';
 import { MapPin } from 'lucide-react';
 import SectionHeader from './SectionHeader';
+import { mediaUrl } from '../config';
 
 const DestinationsGrid = ({ 
   title, 
@@ -43,7 +44,7 @@ const DestinationsGrid = ({
               position: 'absolute', 
               inset: 0, 
               backgroundColor: 'hsl(var(--primary) / 0.1)',
-              background: dest.image ? `url(${dest.image}) center/cover no-repeat` : 'none'
+              background: dest.image ? `url(${mediaUrl(dest.image)}) center/cover no-repeat` : 'none'
             }} />
 
             <div style={{

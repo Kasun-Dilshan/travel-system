@@ -3,7 +3,6 @@ import { motion, AnimatePresence } from 'framer-motion';
 import PackageCard from '../components/PackageCard';
 import TourModal from '../components/TourModal';
 import DestinationModal from '../components/DestinationModal';
-import { INBOUND_PACKAGES } from '../data/tours';
 import { DESTINATIONS } from '../data/destinations';
 import ContactSection from '../components/ContactSection';
 import LanguagePicker from '../components/LanguagePicker';
@@ -92,7 +91,7 @@ export default function Inbound({ selectedLanguage = 'en', setSelectedLanguage }
     }
   };
 
-  const allPackages = dynamicPackages.length > 0 ? dynamicPackages : INBOUND_PACKAGES;
+  const allPackages = dynamicPackages;
   const roundTours = allPackages.filter(p => p.type === 'Round');
   const dayTours = allPackages.filter(p => !p.type || p.type === 'Day');
 

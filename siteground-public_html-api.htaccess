@@ -1,0 +1,27 @@
+RewriteEngine On
+
+# Put this file at: public_html/api/.htaccess
+# It maps same-domain API endpoints like:
+#   /api/auth/login
+#   /api/packages
+# to PHP scripts inside public_html/api/
+
+# auth
+RewriteRule ^auth/login$ auth.php [L,QSA]
+
+# packages
+RewriteRule ^packages$ packages.php [L,QSA]
+RewriteRule ^packages/([0-9]+)$ packages.php?id=$1 [L,QSA]
+
+# bookings
+RewriteRule ^bookings$ bookings.php [L,QSA]
+RewriteRule ^bookings/([0-9]+)$ bookings.php?id=$1 [L,QSA]
+
+# blogs
+RewriteRule ^blogs$ blogs.php [L,QSA]
+RewriteRule ^blogs/([0-9]+)$ blogs.php?id=$1 [L,QSA]
+RewriteRule ^blogs/slug/([^/]+)$ blogs.php?slug=$1 [L,QSA]
+
+# settings
+RewriteRule ^settings$ settings.php [L,QSA]
+

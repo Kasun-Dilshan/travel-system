@@ -3,6 +3,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { ChevronLeft, Send, Calendar, Users, Phone, Mail, User, Info, CheckCircle2 } from 'lucide-react';
 import SEO from '../components/SEO';
+import API_URL, { mediaUrl } from '../config';
 
 export default function BookingPage() {
   const location = useLocation();
@@ -43,6 +44,9 @@ export default function BookingPage() {
     setError(null);
 
     try {
+      const tourId = tour?._id ?? tour?.id;
+      if (!tourId) throw new Error('Tour ID is missing. Please re-open the tour and try again.');
+
       const response = await fetch(`${API_URL}/bookings`, {
         method: 'POST',
         headers: {
@@ -50,13 +54,17 @@ export default function BookingPage() {
         },
         body: JSON.stringify({
           ...formData,
-          tourId: tour._id,
+          guests: Number(formData.guests),
+          tourId,
           tourTitle: tour.title,
-          totalPrice: tour.price * formData.guests
+          totalPrice: tour.price * Number(formData.guests)
         })
       });
 
-      if (!response.ok) throw new Error('Failed to submit booking');
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({}));
+        throw new Error(err.message || 'Failed to submit booking');
+      }
 
       setIsSuccess(true);
       setTimeout(() => navigate('/'), 3000);
@@ -171,7 +179,7 @@ export default function BookingPage() {
             
             <div style={{ position: 'relative', marginBottom: '1.5rem', overflow: 'hidden', borderRadius: '1.5rem' }}>
               <img
-                src={tour.image}
+                src={mediaUrl(tour.image)}
                 alt={tour.title}
                 style={{ width: '100%', height: '180px', objectFit: 'cover' }}
               />

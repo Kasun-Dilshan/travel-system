@@ -1,2 +1,4 @@
 node_modules
 .env
+php-backend/.env
+php-backend/uploads/
