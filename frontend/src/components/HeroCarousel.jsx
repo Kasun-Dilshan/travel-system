@@ -2,8 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ChevronLeft, ChevronRight, ArrowRight } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import { useSite } from '../context/SiteContext';
 
-import beachImg from '../assets/carousel-beach.png';
+import logoImg from '../assets/logo.png';
 import mountainImg from '../assets/carousel-mountain.png';
 import cityImg from '../assets/carousel-city.png';
 import safariImg from '../assets/carousel-safari.png';
@@ -13,7 +14,7 @@ import lagoonImg from '../assets/carousel-lagoon.png';
 const slides = [
   {
     id: 1,
-    image: beachImg,
+    image: logoImg,
     title: "Escape to Paradise",
     subtitle: "Discover the hidden gems of Sri Lanka's pristine coastline.",
     cta: "Explore Inbound Tours",
@@ -65,6 +66,17 @@ export default function HeroCarousel() {
   const [current, setCurrent] = useState(0);
   const [direction, setDirection] = useState(0);
   const navigate = useNavigate();
+  const { t } = useSite();
+
+  const localizedSlides = React.useMemo(() => {
+    const slideT = t?.heroCarouselSlides;
+    if (!Array.isArray(slideT)) return slides;
+    return slides.map((s, idx) => {
+      const over = slideT[idx];
+      if (!over || typeof over !== 'object') return s;
+      return { ...s, ...over };
+    });
+  }, [t]);
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -75,12 +87,12 @@ export default function HeroCarousel() {
 
   const nextSlide = () => {
     setDirection(1);
-    setCurrent((prev) => (prev + 1) % slides.length);
+    setCurrent((prev) => (prev + 1) % localizedSlides.length);
   };
 
   const prevSlide = () => {
     setDirection(-1);
-    setCurrent((prev) => (prev - 1 + slides.length) % slides.length);
+    setCurrent((prev) => (prev - 1 + localizedSlides.length) % localizedSlides.length);
   };
 
   const variants = {
@@ -112,8 +124,10 @@ export default function HeroCarousel() {
   return (
     <div style={{
       position: 'relative',
-      height: '95vh',
+      height: 'min(95dvh, 920px)',
+      minHeight: 'min(520px, 100dvh)',
       width: '100%',
+      maxWidth: '100%',
       overflow: 'hidden',
       backgroundColor: '#000',
     }}>
@@ -138,8 +152,8 @@ export default function HeroCarousel() {
           }} />
           
           <img
-            src={slides[current].image}
-            alt={slides[current].title}
+            src={localizedSlides[current].image}
+            alt={localizedSlides[current].title}
             style={{
               width: '100%',
               height: '100%',
@@ -149,9 +163,9 @@ export default function HeroCarousel() {
 
           <div style={{
             position: 'absolute',
-            bottom: '20%',
-            left: '10%',
-            right: '10%',
+            bottom: 'clamp(18%, 22vh, 28%)',
+            left: 'max(1rem, 6%)',
+            right: 'max(1rem, 6%)',
             maxWidth: '1200px',
             margin: '0 auto',
             zIndex: 2,
@@ -175,7 +189,7 @@ export default function HeroCarousel() {
                 borderLeft: '4px solid hsl(var(--primary))',
                 paddingLeft: '1.5rem'
               }}>
-                Luxury Travel Experiences
+                {t?.heroCarouselLabel || 'Luxury Travel Experiences'}
               </span>
               <h1 className="serif" style={{
                 fontSize: 'clamp(3rem, 8vw, 6rem)',
@@ -185,7 +199,7 @@ export default function HeroCarousel() {
                 color: 'white',
                 textShadow: '0 10px 40px rgba(0,0,0,0.9), 0 4px 15px rgba(0,0,0,0.7)',
               }}>
-                {slides[current].title}
+                {localizedSlides[current].title}
               </h1>
 
               
@@ -198,14 +212,14 @@ export default function HeroCarousel() {
                 fontWeight: 500,
                 textShadow: '0 2px 15px rgba(0,0,0,0.8)',
               }}>
-                {slides[current].subtitle}
+                {localizedSlides[current].subtitle}
               </p>
 
               
               <motion.button
                 whileHover={{ scale: 1.05, backgroundColor: 'white', color: 'black' }}
                 whileTap={{ scale: 0.95 }}
-                onClick={() => navigate(slides[current].link)}
+                onClick={() => navigate(localizedSlides[current].link)}
                 style={{
                   background: 'transparent',
                   backdropFilter: 'blur(12px)',
@@ -222,7 +236,7 @@ export default function HeroCarousel() {
                   transition: 'all 0.4s cubic-bezier(0.16, 1, 0.3, 1)'
                 }}
               >
-                {slides[current].cta} <ArrowRight size={22} />
+                {localizedSlides[current].cta} <ArrowRight size={22} />
               </motion.button>
             </motion.div>
           </div>
@@ -230,21 +244,27 @@ export default function HeroCarousel() {
       </AnimatePresence>
 
       {/* Controls */}
-      <div style={{
+      <div
+        className="hero-carousel-controls"
+        style={{
         position: 'absolute',
-        bottom: '8%',
-        left: '10%',
-        right: '10%',
+        bottom: 'max(6%, env(safe-area-inset-bottom, 0px))',
+        left: 'max(1rem, 8%)',
+        right: 'max(1rem, 8%)',
         zIndex: 10,
         display: 'flex',
         justifyContent: 'space-between',
-        alignItems: 'center'
+        alignItems: 'center',
+        flexWrap: 'wrap',
+        gap: '1rem'
       }}>
-        <div style={{
+        <div className="hero-carousel-dots" style={{
           display: 'flex',
-          gap: '1rem'
+          gap: '1rem',
+          flexWrap: 'wrap',
+          justifyContent: 'center'
         }}>
-          {slides.map((_, idx) => (
+          {localizedSlides.map((_, idx) => (
             <motion.div
               key={idx}
               initial={false}
@@ -264,11 +284,11 @@ export default function HeroCarousel() {
           ))}
         </div>
 
-        <div style={{ display: 'flex', gap: '1.5rem' }}>
-          <button onClick={prevSlide} style={controlBtnStyle}>
+        <div style={{ display: 'flex', gap: '1.5rem', justifyContent: 'center' }}>
+          <button type="button" aria-label="Previous slide" onClick={prevSlide} style={controlBtnStyle}>
             <ChevronLeft size={24} />
           </button>
-          <button onClick={nextSlide} style={controlBtnStyle}>
+          <button type="button" aria-label="Next slide" onClick={nextSlide} style={controlBtnStyle}>
             <ChevronRight size={24} />
           </button>
         </div>
@@ -278,6 +298,16 @@ export default function HeroCarousel() {
         @keyframes reveal {
           from { clip-path: inset(0 100% 0 0); }
           to { clip-path: inset(0 0 0 0); }
+        }
+        @media (max-width: 640px) {
+          .hero-carousel-controls {
+            flex-direction: column-reverse;
+            align-items: stretch !important;
+            bottom: max(1rem, env(safe-area-inset-bottom, 0px)) !important;
+          }
+          .hero-carousel-controls > div:last-child {
+            justify-content: center;
+          }
         }
       `}</style>
     </div>
