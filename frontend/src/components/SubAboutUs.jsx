@@ -1,13 +1,15 @@
 import React from 'react';
 import { motion } from 'framer-motion';
 import { ShieldCheck, Star, Users } from 'lucide-react';
-import logoImg from '../assets/logo.png';
+import aboutServicesImg from '../assets/about-our-services.webp';
+import { useSite } from '../context/SiteContext';
 
 const SubAboutUs = ({ title, content, accentColor = 'hsl(var(--primary))' }) => {
+  const { t } = useSite();
   const features = [
-    { icon: <ShieldCheck size={20} />, label: "Verified Tours" },
-    { icon: <Star size={20} />, label: "Premium Quality" },
-    { icon: <Users size={20} />, label: "Local Guides" }
+    { icon: <ShieldCheck size={20} />, label: t?.subAboutVerified || "Verified Tours" },
+    { icon: <Star size={20} />, label: t?.subAboutPremium || "Premium Quality" },
+    { icon: <Users size={20} />, label: t?.subAboutGuides || "Local Guides" }
   ];
 
   return (
@@ -56,16 +58,15 @@ const SubAboutUs = ({ title, content, accentColor = 'hsl(var(--primary))' }) => 
             overflow: 'hidden'
           }}
         >
-          <img 
-            src={logoImg} 
-            alt="Serendib Travels Logo" 
-            style={{ 
-              maxHeight: '180px', 
-              maxWidth: '80%', 
-              objectFit: 'contain', 
-              opacity: 0.9,
-              filter: 'drop-shadow(0 10px 20px rgba(0,0,0,0.1))'
-            }} 
+          <img
+            src={aboutServicesImg}
+            alt="About our services"
+            style={{
+              width: '100%',
+              height: '100%',
+              objectFit: 'cover',
+              borderRadius: '2rem'
+            }}
           />
           <div style={{
             position: 'absolute',

@@ -2,14 +2,18 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import API_URL, { mediaUrl } from '../config';
 import AdminLogin from '../components/AdminLogin';
+import { getLocalizationBucket, normalizeLanguageCode } from '../utils/localization';
+import { getPackageLocalizationFallback } from '../utils/packageLocalizationFallback';
+import { useSite } from '../context/SiteContext';
 import { RevenueChart, CategoryDistribution } from '../components/DashboardCharts';
+import { formatMoney } from '../utils/money';
 import {
   Users, Calendar, Phone, Mail, MapPin, Trash2,
   CheckCircle2, X, Clock, Search, AlertCircle,
   TrendingUp, LayoutDashboard, Briefcase, Settings,
   Plus, RefreshCcw, Pencil, Save, LogOut, ExternalLink,
   DollarSign, BookOpen, Globe, Image, Link as LinkIcon,
-  ChevronDown, ChevronUp, Eye, EyeOff, Star, Tag, FileText
+  ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Eye, EyeOff, Star, Tag, FileText
 } from 'lucide-react';
 
 // ─── Helpers ───────────────────────────────────────────────────────────────
@@ -27,13 +31,33 @@ async function apiFetch(url, options = {}) {
   return res.json();
 }
 
+function pickLocalizedField(localizedVal, baseVal) {
+  if (typeof localizedVal === 'string' && localizedVal.trim()) return localizedVal;
+  if (baseVal !== null && baseVal !== undefined && baseVal !== '') return baseVal;
+  return localizedVal || baseVal || '';
+}
+
+function pickLocalizedArray(localizedVal, baseVal) {
+  if (Array.isArray(localizedVal) && localizedVal.length > 0) return localizedVal;
+  if (Array.isArray(baseVal)) return baseVal;
+  return [];
+}
+
 async function uploadAdminImage(file) {
   const token = localStorage.getItem('admin_token');
   const body = new FormData();
   body.append('image', file);
+  if (token) {
+    body.append('admin_token', token);
+  }
   const res = await fetch(`${API_URL}/upload`, {
     method: 'POST',
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    headers: token
+      ? {
+          Authorization: `Bearer ${token}`,
+          'X-Admin-Token': token,
+        }
+      : {},
     body,
   });
   if (!res.ok) {
@@ -45,11 +69,15 @@ async function uploadAdminImage(file) {
 
 // ─── Main Component ─────────────────────────────────────────────────────────
 export default function AdminDashboard() {
+  const { language } = useSite();
   const [isLoggedIn, setIsLoggedIn] = useState(() => {
     return localStorage.getItem('admin_session') === 'active' && !!localStorage.getItem('admin_token');
   });
   const [activeTab, setActiveTab] = useState('overview');
   const [bookings, setBookings] = useState([]);
+  const [reviews, setReviews] = useState([]);
+  const [isBookingModalOpen, setIsBookingModalOpen] = useState(false);
+  const [currentBooking, setCurrentBooking] = useState(null);
   const [packages, setPackages] = useState([]);
   const [blogs, setBlogs] = useState([]);
   const [siteSettings, setSiteSettings] = useState(null);
@@ -57,25 +85,101 @@ export default function AdminDashboard() {
   const [error, setError] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [bookingFilter, setBookingFilter] = useState('all');
+  const [reviewFilter, setReviewFilter] = useState('pending');
 
   // Package modal
   const [isPkgModalOpen, setIsPkgModalOpen] = useState(false);
   const [currentPackage, setCurrentPackage] = useState(null);
   const [isSaving, setIsSaving] = useState(false);
   const [isUploadingCover, setIsUploadingCover] = useState(false);
-  const emptyPkg = { title: '', price: 0, image: '', gallery: [], duration: '', description: '', category: 'Inbound', type: 'Round', inclusions: [], exclusions: [], highlights: [], itinerary: [], featured: false, isLimitedTime: false, discountPercentage: 0, seoTitle: '', seoDescription: '' };
+  const [isUploadingBlogCover, setIsUploadingBlogCover] = useState(false);
+  const [pkgPreviewIndex, setPkgPreviewIndex] = useState(0);
+  const [isPkgLibraryOpen, setIsPkgLibraryOpen] = useState(false);
+  const [pkgLibraryFiles, setPkgLibraryFiles] = useState([]);
+  const [isLoadingPkgLibrary, setIsLoadingPkgLibrary] = useState(false);
+  const [pkgLibraryError, setPkgLibraryError] = useState('');
+  const emptyPkg = { title: '', price: 0, image: '', gallery: [], duration: '', description: '', category: 'Inbound', type: 'Round', inclusions: [], exclusions: [], highlights: [], itinerary: [], featured: false, isHot: false, isLimitedTime: false, discountPercentage: 0, seoTitle: '', seoDescription: '' };
   const [pkgForm, setPkgForm] = useState(emptyPkg);
+  const [pkgBaseSnapshot, setPkgBaseSnapshot] = useState(null);
 
   // Blog modal
   const [isBlogModalOpen, setIsBlogModalOpen] = useState(false);
   const [currentBlog, setCurrentBlog] = useState(null);
   const emptyBlog = { title: '', slug: '', excerpt: '', content: '', coverImage: '', tags: [], category: 'Travel Tips', author: 'Serendib Travel', status: 'draft', readTime: '', seoTitle: '', seoDescription: '' };
   const [blogForm, setBlogForm] = useState(emptyBlog);
+  const [blogBaseSnapshot, setBlogBaseSnapshot] = useState(null);
 
   // Settings state
   const [settingsForm, setSettingsForm] = useState({});
   const [isSavingSettings, setIsSavingSettings] = useState(false);
   const [settingsSaved, setSettingsSaved] = useState(false);
+  const [settingsBaseSnapshot, setSettingsBaseSnapshot] = useState(null);
+  const premiumServiceKeys = ['transport', 'hotels', 'activities', 'events', 'corporate'];
+
+  const defaultPremiumServices = [
+    {
+      key: 'transport',
+      shortDesc: 'Premium fleet for all your travel needs.',
+      details:
+        'Choose from sedans, SUVs, vans, and luxury vehicles with professional drivers. We handle airport transfers, city rides, and multi-day transport with flexible schedules.',
+      highlights: ['Airport transfers', 'Private driver', 'Luxury & family options', 'Flexible itineraries'],
+      ctaLabel: 'Request a quote',
+      ctaLink: '/booking',
+    },
+    {
+      key: 'hotels',
+      shortDesc: 'Exclusive deals with handpicked luxury stays.',
+      details:
+        'We recommend and book the best hotels and resorts based on your budget, preferred locations, and travel style. Enjoy curated options and trusted partners for a smooth stay.',
+      highlights: ['Handpicked stays', 'Best available rates', 'Family & honeymoon options', 'Fast confirmations'],
+      ctaLabel: 'Get recommendations',
+      ctaLink: '/booking',
+    },
+    {
+      key: 'activities',
+      shortDesc: 'Curated experiences and local adventures.',
+      details:
+        'From cultural sites to nature and adventure, we plan experiences that match your interests. We can also arrange guides, tickets, and timed entries where required.',
+      highlights: ['Local guides', 'Custom activities', 'Tickets & reservations', 'Safe, verified partners'],
+      ctaLabel: 'Plan my activities',
+      ctaLink: '/booking',
+    },
+    {
+      key: 'events',
+      shortDesc: 'Full event planning and MICE support.',
+      details:
+        'We support meetings, incentives, conferences, and events from end to end—venues, logistics, accommodation, transport, and on-site coordination.',
+      highlights: ['Venue sourcing', 'Group logistics', 'On-site coordination', 'Vendor management'],
+      ctaLabel: 'Talk to our team',
+      ctaLink: '/booking',
+    },
+    {
+      key: 'corporate',
+      shortDesc: 'Tailored business travel solutions.',
+      details:
+        'Corporate travel planning for teams and executives. We handle schedules, bookings, and support with a focus on reliability, speed, and comfort.',
+      highlights: ['Priority support', 'Flexible changes', 'Team itineraries', 'Trusted partners'],
+      ctaLabel: 'Contact corporate desk',
+      ctaLink: '/booking',
+    },
+  ];
+
+  const normalizedPremiumServices = (list) => {
+    const arr = Array.isArray(list) ? list.filter(Boolean) : [];
+    const byKey = new Map(arr.map((s) => [s.key, s]));
+    return premiumServiceKeys.map((key) => {
+      const base = defaultPremiumServices.find((d) => d.key === key) || { key };
+      const cur = byKey.get(key) || {};
+      return {
+        key,
+        shortDesc: cur.shortDesc ?? base.shortDesc ?? '',
+        details: cur.details ?? base.details ?? '',
+        highlights: Array.isArray(cur.highlights) ? cur.highlights : (base.highlights ?? []),
+        ctaLabel: cur.ctaLabel ?? base.ctaLabel ?? '',
+        ctaLink: cur.ctaLink ?? base.ctaLink ?? '',
+      };
+    });
+  };
 
   // ── Auth ──────────────────────────────────────────────────────────────────
   const handleLogin = useCallback((token) => {
@@ -93,32 +197,67 @@ export default function AdminDashboard() {
   const fetchData = useCallback(async () => {
     setIsLoading(true);
     setError(null);
-    try {
-      const [bookingsData, packagesData, blogsData, settingsData] = await Promise.all([
-        apiFetch(`${API_URL}/bookings`),
-        apiFetch(`${API_URL}/packages`),
-        apiFetch(`${API_URL}/blogs?all=true`),
-        apiFetch(`${API_URL}/settings`)
-      ]);
-      if (Array.isArray(bookingsData)) setBookings(bookingsData);
-      if (Array.isArray(packagesData)) setPackages(packagesData);
-      if (Array.isArray(blogsData)) setBlogs(blogsData);
-      if (settingsData) {
-        setSiteSettings(settingsData);
-        setSettingsForm(settingsData);
+    const requests = [
+      { key: 'bookings', url: `${API_URL}/bookings`, apply: (data) => { if (Array.isArray(data)) setBookings(data); } },
+      { key: 'packages', url: `${API_URL}/packages`, apply: (data) => { if (Array.isArray(data)) setPackages(data); } },
+      { key: 'blogs', url: `${API_URL}/blogs?all=true`, apply: (data) => { if (Array.isArray(data)) setBlogs(data); } },
+      {
+        key: 'settings',
+        url: `${API_URL}/settings`,
+        apply: (data) => {
+          if (data) {
+            setSiteSettings(data);
+            setSettingsForm(data);
+            setSettingsBaseSnapshot(data);
+          }
+        },
+      },
+      { key: 'reviews', url: `${API_URL}/reviews?all=true`, apply: (data) => { if (Array.isArray(data)) setReviews(data); } },
+    ];
+
+    const results = await Promise.allSettled(requests.map((r) => apiFetch(r.url)));
+    const failures = [];
+
+    results.forEach((result, index) => {
+      const { key, apply } = requests[index];
+      if (result.status === 'fulfilled') {
+        apply(result.value);
+      } else {
+        failures.push(`${key}: ${result.reason?.message || 'request failed'}`);
       }
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setIsLoading(false);
+    });
+
+    if (failures.length) {
+      setError(failures.join(' · '));
     }
+    setIsLoading(false);
   }, []);
 
   useEffect(() => {
     if (isLoggedIn) fetchData();
   }, [isLoggedIn, fetchData]);
 
+  // When the admin UI language changes, show that language's settings fields
+  // (but keep the underlying base snapshot immutable for safe saving).
+  useEffect(() => {
+    if (!siteSettings) return;
+    const base = settingsBaseSnapshot || siteSettings || {};
+    const bucket = getLocalizationBucket(base, language);
+    // Merge only for editing convenience; saving logic decides whether to write base or a language bucket.
+    setSettingsForm((prev) => ({
+      ...base,
+      ...bucket,
+      // preserve localizations object
+      localizations: base.localizations || prev?.localizations || {},
+    }));
+  }, [language, siteSettings, settingsBaseSnapshot]);
+
   // ── Bookings ──────────────────────────────────────────────────────────────
+  const handleOpenBookingModal = (booking) => {
+    setCurrentBooking(booking);
+    setIsBookingModalOpen(true);
+  };
+
   const updateBookingStatus = async (id, status) => {
     try {
       await apiFetch(`${API_URL}/bookings/${id}`, { method: 'PATCH', body: JSON.stringify({ status }) });
@@ -137,32 +276,127 @@ export default function AdminDashboard() {
   // ── Packages ──────────────────────────────────────────────────────────────
   const handleOpenPkgModal = (pkg = null) => {
     setCurrentPackage(pkg);
+    setPkgPreviewIndex(0);
+    setIsPkgLibraryOpen(false);
+    setPkgLibraryError('');
+
+    // Keep an immutable snapshot of the base (English/source) fields so that
+    // saving while viewing a different language only updates `localizations[lang]`
+    // without overwriting the base content.
+    setPkgBaseSnapshot(pkg ? {
+      title: pkg.title || '',
+      price: pkg.price || 0,
+      image: pkg.image || '',
+      gallery: pkg.gallery || pkg.images || [],
+      duration: pkg.duration || '',
+      description: pkg.description || '',
+      category: pkg.category || 'Inbound',
+      type: pkg.type || 'Round',
+      inclusions: Array.isArray(pkg.inclusions) ? pkg.inclusions : [],
+      exclusions: Array.isArray(pkg.exclusions) ? pkg.exclusions : [],
+      highlights: Array.isArray(pkg.highlights) ? pkg.highlights : [],
+      itinerary: Array.isArray(pkg.itinerary) ? pkg.itinerary : [],
+      featured: !!pkg.featured,
+      isHot: !!pkg.isHot,
+      isLimitedTime: !!pkg.isLimitedTime,
+      discountPercentage: pkg.discountPercentage || 0,
+      seoTitle: pkg.seoTitle || '',
+      seoDescription: pkg.seoDescription || '',
+      localizations: (pkg && typeof pkg.localizations === 'object' && pkg.localizations) ? pkg.localizations : {},
+    } : null);
+
+    const localized = pkg ? {
+      ...getPackageLocalizationFallback(pkg, language),
+      ...getLocalizationBucket(pkg, language),
+    } : {};
+
+    // When viewing the admin portal in a non-English language, edit that language's
+    // bucket if present; otherwise fall back to base fields for convenience.
     setPkgForm(pkg ? {
-      title: pkg.title || '', price: pkg.price || 0, image: pkg.image || '',
-      gallery: pkg.gallery || [], duration: pkg.duration || '',
-      description: pkg.description || '', category: pkg.category || 'Inbound',
-      type: pkg.type || 'Round', inclusions: pkg.inclusions || [],
-      exclusions: pkg.exclusions || [], highlights: pkg.highlights || [],
-      itinerary: pkg.itinerary || [], featured: pkg.featured || false,
+      title: pickLocalizedField(localized.title, pkg.title),
+      price: pkg.price || 0,
+      image: pkg.image || '',
+      gallery: pkg.gallery || pkg.images || [],
+      duration: pickLocalizedField(localized.duration, pkg.duration),
+      description: pickLocalizedField(localized.description, pkg.description),
+      category: pickLocalizedField(localized.category, pkg.category) || 'Inbound',
+      type: pickLocalizedField(localized.type, pkg.type) || 'Round',
+      inclusions: pickLocalizedArray(localized.inclusions, pkg.inclusions),
+      exclusions: pickLocalizedArray(localized.exclusions, pkg.exclusions),
+      highlights: pickLocalizedArray(localized.highlights, pkg.highlights),
+      itinerary: pickLocalizedArray(localized.itinerary, pkg.itinerary),
+      featured: pkg.featured || false,
+      isHot: pkg.isHot || false,
       isLimitedTime: pkg.isLimitedTime || false,
       discountPercentage: pkg.discountPercentage || 0,
-      seoTitle: pkg.seoTitle || '', seoDescription: pkg.seoDescription || ''
+      seoTitle: pickLocalizedField(localized.seoTitle, pkg.seoTitle),
+      seoDescription: pickLocalizedField(localized.seoDescription, pkg.seoDescription),
     } : emptyPkg);
     setIsPkgModalOpen(true);
   };
 
-  const handlePkgCoverFile = async (e) => {
-    const file = e.target.files?.[0];
+  const openPkgLibrary = async () => {
+    setIsPkgLibraryOpen(true);
+    setIsLoadingPkgLibrary(true);
+    setPkgLibraryError('');
+    try {
+      const res = await apiFetch(`${API_URL}/uploads?type=packages`);
+      setPkgLibraryFiles(Array.isArray(res?.files) ? res.files : []);
+    } catch (err) {
+      setPkgLibraryError(err.message || 'Failed to load library');
+      setPkgLibraryFiles([]);
+    } finally {
+      setIsLoadingPkgLibrary(false);
+    }
+  };
+
+  const addFromPkgLibrary = (pathOrUrl) => {
+    if (!pathOrUrl) return;
+    setPkgForm((p) => {
+      const prev = Array.isArray(p.gallery) ? p.gallery : [];
+      if (prev.includes(pathOrUrl)) return p;
+      if (prev.length >= 5) return p;
+      const next = [...prev, pathOrUrl].slice(0, 5);
+      return { ...p, gallery: next, image: next[0] || p.image || '' };
+    });
+  };
+
+  const handlePkgCoverFiles = async (e) => {
+    const files = Array.from(e.target.files || []);
     e.target.value = '';
-    if (!file) return;
-    if (!file.type.startsWith('image/')) {
-      alert('Please choose an image file (JPEG, PNG, WebP, or GIF).');
+    if (!files.length) return;
+
+    const onlyImages = files.filter((f) => f && typeof f.type === 'string' && f.type.startsWith('image/'));
+    if (onlyImages.length !== files.length) {
+      alert('Please choose image files only (JPEG, PNG, WebP, or GIF).');
+    }
+
+    const currentCount = Array.isArray(pkgForm.gallery) ? pkgForm.gallery.length : 0;
+    const availableSlots = Math.max(0, 5 - currentCount);
+    const selected = onlyImages.slice(0, availableSlots);
+
+    if (!selected.length) {
+      alert('You can upload up to 5 photos.');
       return;
     }
+
     setIsUploadingCover(true);
     try {
-      const { url } = await uploadAdminImage(file);
-      setPkgForm(p => ({ ...p, image: url }));
+      const uploadedUrls = [];
+      for (const file of selected) {
+        const { url } = await uploadAdminImage(file);
+        if (url) uploadedUrls.push(url);
+      }
+
+      setPkgForm((p) => {
+        const prevGallery = Array.isArray(p.gallery) ? p.gallery : [];
+        const nextGallery = [...prevGallery, ...uploadedUrls].slice(0, 5);
+        return {
+          ...p,
+          gallery: nextGallery,
+          image: nextGallery[0] || p.image || '',
+        };
+      });
     } catch (err) {
       alert(err.message || 'Upload failed');
     } finally {
@@ -172,15 +406,78 @@ export default function AdminDashboard() {
 
   const handleSavePackage = async (e) => {
     e.preventDefault();
-    if (!String(pkgForm.image || '').trim()) {
-      alert('Please upload a cover image.');
+    const gallery = Array.isArray(pkgForm.gallery) ? pkgForm.gallery.filter(Boolean) : [];
+    const cover = String(gallery[0] || pkgForm.image || '').trim();
+    if (!cover) {
+      alert('Please upload at least 1 tour photo.');
       return;
     }
     setIsSaving(true);
     try {
       const method = currentPackage ? 'PUT' : 'POST';
       const url = currentPackage ? `${API_URL}/packages/${currentPackage._id}` : `${API_URL}/packages`;
-      const saved = await apiFetch(url, { method, body: JSON.stringify(pkgForm) });
+
+      const isNonEnglish = String(language || 'en').toLowerCase() !== 'en';
+      const makeBucket = (form) => ({
+        title: form.title || '',
+        description: form.description || '',
+        duration: form.duration || '',
+        type: form.type || '',
+        category: form.category || '',
+        highlights: Array.isArray(form.highlights) ? form.highlights : [],
+        inclusions: Array.isArray(form.inclusions) ? form.inclusions : [],
+        exclusions: Array.isArray(form.exclusions) ? form.exclusions : [],
+        itinerary: Array.isArray(form.itinerary) ? form.itinerary : [],
+        seoTitle: form.seoTitle || '',
+        seoDescription: form.seoDescription || '',
+      });
+
+      let payload;
+      if (isNonEnglish && currentPackage) {
+        const base = pkgBaseSnapshot || {};
+        const existingLocalizations = (base.localizations && typeof base.localizations === 'object')
+          ? base.localizations
+          : (currentPackage.localizations && typeof currentPackage.localizations === 'object' ? currentPackage.localizations : {});
+
+        payload = {
+          // keep base/original fields intact
+          ...base,
+          // always keep these canonical media + price/flags in sync
+          price: pkgForm.price,
+          featured: !!pkgForm.featured,
+          isHot: !!pkgForm.isHot,
+          isLimitedTime: !!pkgForm.isLimitedTime,
+          discountPercentage: pkgForm.discountPercentage || 0,
+          expiryDate: pkgForm.expiryDate ?? base.expiryDate ?? null,
+          gallery,
+          image: cover,
+          // update only the active language bucket
+          localizations: {
+            ...(existingLocalizations || {}),
+            [language]: {
+              ...(existingLocalizations?.[language] || {}),
+              ...makeBucket(pkgForm),
+            },
+          },
+        };
+      } else {
+        // English (or creating a package): save as base, and optionally seed the bucket too.
+        payload = {
+          ...pkgForm,
+          gallery,
+          image: cover,
+          localizations: isNonEnglish
+            ? {
+                ...((currentPackage && typeof currentPackage.localizations === 'object' && currentPackage.localizations) ? currentPackage.localizations : {}),
+                [language]: {
+                  ...(((currentPackage && currentPackage.localizations && currentPackage.localizations[language]) || {})),
+                  ...makeBucket(pkgForm),
+                },
+              }
+            : (currentPackage?.localizations || pkgForm.localizations),
+        };
+      }
+      const saved = await apiFetch(url, { method, body: JSON.stringify(payload) });
       setPackages(prev => currentPackage ? prev.map(p => p._id === saved._id ? saved : p) : [...prev, saved]);
       setIsPkgModalOpen(false);
     } catch (err) { alert(err.message); }
@@ -198,15 +495,58 @@ export default function AdminDashboard() {
   // ── Blogs ─────────────────────────────────────────────────────────────────
   const handleOpenBlogModal = (blog = null) => {
     setCurrentBlog(blog);
+    const isNonEnglish = normalizeLanguageCode(language) !== 'en';
+    setBlogBaseSnapshot(blog ? ({
+      title: blog.title || '',
+      slug: blog.slug || '',
+      excerpt: blog.excerpt || '',
+      content: blog.content || '',
+      coverImage: blog.coverImage || '',
+      tags: Array.isArray(blog.tags) ? blog.tags : [],
+      category: blog.category || 'Travel Tips',
+      author: blog.author || 'Serendib Travel',
+      status: blog.status || 'draft',
+      readTime: blog.readTime || '',
+      seoTitle: blog.seoTitle || '',
+      seoDescription: blog.seoDescription || '',
+      localizations: (blog && typeof blog.localizations === 'object' && blog.localizations) ? blog.localizations : {},
+    }) : null);
+
+    const localized = blog ? getLocalizationBucket(blog, language) : {};
     setBlogForm(blog ? {
-      title: blog.title || '', slug: blog.slug || '', excerpt: blog.excerpt || '',
-      content: blog.content || '', coverImage: blog.coverImage || '',
-      tags: blog.tags || [], category: blog.category || 'Travel Tips',
-      author: blog.author || 'Serendib Travel', status: blog.status || 'draft',
-      readTime: blog.readTime || '', seoTitle: blog.seoTitle || '',
-      seoDescription: blog.seoDescription || ''
+      title: pickLocalizedField(localized.title, blog.title),
+      slug: blog.slug || '',
+      excerpt: pickLocalizedField(localized.excerpt, blog.excerpt),
+      content: pickLocalizedField(localized.content, blog.content),
+      coverImage: blog.coverImage || '',
+      tags: Array.isArray(blog.tags) ? blog.tags : [],
+      category: pickLocalizedField(localized.category, blog.category) || 'Travel Tips',
+      author: pickLocalizedField(localized.author, blog.author) || 'Serendib Travel',
+      status: blog.status || 'draft',
+      readTime: pickLocalizedField(localized.readTime, blog.readTime),
+      seoTitle: pickLocalizedField(localized.seoTitle, blog.seoTitle),
+      seoDescription: pickLocalizedField(localized.seoDescription, blog.seoDescription),
     } : emptyBlog);
     setIsBlogModalOpen(true);
+  };
+
+  const handleBlogCoverFile = async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+      alert('Please choose an image file (JPEG, PNG, WebP, or GIF).');
+      return;
+    }
+    setIsUploadingBlogCover(true);
+    try {
+      const { url } = await uploadAdminImage(file);
+      setBlogForm(p => ({ ...p, coverImage: url }));
+    } catch (err) {
+      alert(err.message || 'Upload failed');
+    } finally {
+      setIsUploadingBlogCover(false);
+    }
   };
 
   const handleSaveBlog = async (e) => {
@@ -215,7 +555,58 @@ export default function AdminDashboard() {
     try {
       const method = currentBlog ? 'PUT' : 'POST';
       const url = currentBlog ? `${API_URL}/blogs/${currentBlog._id}` : `${API_URL}/blogs`;
-      const saved = await apiFetch(url, { method, body: JSON.stringify(blogForm) });
+      const isNonEnglish = normalizeLanguageCode(language) !== 'en';
+      const makeBucket = (form) => ({
+        title: form.title || '',
+        excerpt: form.excerpt || '',
+        content: form.content || '',
+        category: form.category || '',
+        author: form.author || '',
+        readTime: form.readTime || '',
+        seoTitle: form.seoTitle || '',
+        seoDescription: form.seoDescription || '',
+      });
+
+      let payload;
+      if (isNonEnglish && currentBlog) {
+        const base = blogBaseSnapshot || {};
+        const existingLocalizations = (base.localizations && typeof base.localizations === 'object')
+          ? base.localizations
+          : (currentBlog.localizations && typeof currentBlog.localizations === 'object' ? currentBlog.localizations : {});
+
+        payload = {
+          // keep base/original fields intact
+          ...base,
+          // keep canonical fields in sync across languages
+          coverImage: blogForm.coverImage || base.coverImage || '',
+          tags: Array.isArray(blogForm.tags) ? blogForm.tags : (base.tags || []),
+          status: blogForm.status || base.status || 'draft',
+          // update only the active language bucket
+          localizations: {
+            ...(existingLocalizations || {}),
+            [language]: {
+              ...(existingLocalizations?.[language] || {}),
+              ...makeBucket(blogForm),
+            },
+          },
+        };
+      } else {
+        // English (or creating): save as base, and optionally seed the bucket too.
+        payload = {
+          ...blogForm,
+          localizations: isNonEnglish
+            ? {
+                ...((currentBlog && typeof currentBlog.localizations === 'object' && currentBlog.localizations) ? currentBlog.localizations : {}),
+                [language]: {
+                  ...(((currentBlog && currentBlog.localizations && currentBlog.localizations[language]) || {})),
+                  ...makeBucket(blogForm),
+                },
+              }
+            : (currentBlog?.localizations || blogForm.localizations),
+        };
+      }
+
+      const saved = await apiFetch(url, { method, body: JSON.stringify(payload) });
       setBlogs(prev => currentBlog ? prev.map(b => b._id === saved._id ? saved : b) : [...prev, saved]);
       setIsBlogModalOpen(false);
     } catch (err) { alert(err.message); }
@@ -235,9 +626,75 @@ export default function AdminDashboard() {
     e.preventDefault();
     setIsSavingSettings(true);
     try {
-      const saved = await apiFetch(`${API_URL}/settings`, { method: 'PUT', body: JSON.stringify(settingsForm) });
+      const isNonEnglish = normalizeLanguageCode(language) !== 'en';
+
+      // Only these fields are language-dependent; contact links, emails, phone etc. remain global.
+      const makeBucket = (form) => ({
+        heroTitle: form.heroTitle || '',
+        heroSubtitle: form.heroSubtitle || '',
+        aboutTitle: form.aboutTitle || '',
+        aboutText: form.aboutText || '',
+        contactAddress: form.contactAddress || '',
+        announcementText: form.announcementText || '',
+        companyName: form.companyName || '',
+        companyTagline: form.companyTagline || '',
+        footerText: form.footerText || '',
+        seoTitle: form.seoTitle || '',
+        seoDescription: form.seoDescription || '',
+        premiumServices: Array.isArray(form.premiumServices) ? form.premiumServices : [],
+      });
+
+      let payload;
+      if (isNonEnglish && settingsBaseSnapshot) {
+        const base = settingsBaseSnapshot || {};
+        const existingLocalizations = (base.localizations && typeof base.localizations === 'object')
+          ? base.localizations
+          : (settingsForm.localizations && typeof settingsForm.localizations === 'object' ? settingsForm.localizations : {});
+
+        payload = {
+          ...base,
+          // Keep global/canonical fields in sync
+          heroImages: settingsForm.heroImages || base.heroImages || [],
+          partnerLogos: settingsForm.partnerLogos || base.partnerLogos || [],
+          featuredTourIds: settingsForm.featuredTourIds || base.featuredTourIds || [],
+          announcementEnabled: !!settingsForm.announcementEnabled,
+          announcementLink: settingsForm.announcementLink || base.announcementLink || '',
+          contactEmail: settingsForm.contactEmail || base.contactEmail || '',
+          contactPhone: settingsForm.contactPhone || base.contactPhone || '',
+          contactWhatsApp: settingsForm.contactWhatsApp || base.contactWhatsApp || '',
+          socialFacebook: settingsForm.socialFacebook || base.socialFacebook || '',
+          socialInstagram: settingsForm.socialInstagram || base.socialInstagram || '',
+          socialTwitter: settingsForm.socialTwitter || base.socialTwitter || '',
+          socialYoutube: settingsForm.socialYoutube || base.socialYoutube || '',
+          socialTripAdvisor: settingsForm.socialTripAdvisor || base.socialTripAdvisor || '',
+          companyLogo: settingsForm.companyLogo || base.companyLogo || '',
+          localizations: {
+            ...(existingLocalizations || {}),
+            [language]: {
+              ...(existingLocalizations?.[language] || {}),
+              ...makeBucket(settingsForm),
+            },
+          },
+        };
+      } else {
+        payload = {
+          ...settingsForm,
+          localizations: isNonEnglish
+            ? {
+                ...((settingsForm && typeof settingsForm.localizations === 'object' && settingsForm.localizations) ? settingsForm.localizations : {}),
+                [language]: {
+                  ...(((settingsForm && settingsForm.localizations && settingsForm.localizations[language]) || {})),
+                  ...makeBucket(settingsForm),
+                },
+              }
+            : settingsForm.localizations,
+        };
+      }
+
+      const saved = await apiFetch(`${API_URL}/settings`, { method: 'PUT', body: JSON.stringify(payload) });
       setSiteSettings(saved);
       setSettingsForm(saved);
+      setSettingsBaseSnapshot(saved);
       setSettingsSaved(true);
       setTimeout(() => setSettingsSaved(false), 3000);
     } catch (err) { alert(err.message); }
@@ -253,7 +710,27 @@ export default function AdminDashboard() {
     totalBookings: bookings.length,
     revenue: bookings.filter(b => b.status === 'confirmed').reduce((acc, b) => acc + (b.totalPrice || 0), 0),
     avgTourPrice: packages.length > 0 ? packages.reduce((acc, p) => acc + (p.price || 0), 0) / packages.length : 0,
-    pendingBookings: bookings.filter(b => b.status === 'pending').length
+    pendingBookings: bookings.filter(b => b.status === 'pending').length,
+    pendingReviews: reviews.filter(r => r.status === 'pending').length,
+  };
+
+  const approveReview = async (id) => {
+    try {
+      const updated = await apiFetch(`${API_URL}/reviews/${id}`, { method: 'PATCH', body: JSON.stringify({ status: 'approved' }) });
+      setReviews((prev) => prev.map((r) => r._id === id ? updated : r));
+    } catch (err) {
+      alert(err.message);
+    }
+  };
+
+  const rejectReview = async (id) => {
+    if (!window.confirm('Reject and delete this review?')) return;
+    try {
+      await apiFetch(`${API_URL}/reviews/${id}`, { method: 'DELETE' });
+      setReviews((prev) => prev.filter((r) => r._id !== id));
+    } catch (err) {
+      alert(err.message);
+    }
   };
 
   const filteredBookings = bookings.filter(b => {
@@ -280,6 +757,7 @@ export default function AdminDashboard() {
           <NavItem active={activeTab === 'bookings'} onClick={() => setActiveTab('bookings')} icon={<Calendar size={20} />} label="Bookings" badge={stats.pendingBookings || null} />
           <NavItem active={activeTab === 'tours'} onClick={() => setActiveTab('tours')} icon={<Briefcase size={20} />} label="Tour Packages" />
           <NavItem active={activeTab === 'blogs'} onClick={() => setActiveTab('blogs')} icon={<BookOpen size={20} />} label="Blog Posts" />
+          <NavItem active={activeTab === 'reviews'} onClick={() => setActiveTab('reviews')} icon={<Star size={20} />} label="Reviews" badge={stats.pendingReviews || null} />
           <NavItem active={activeTab === 'settings'} onClick={() => setActiveTab('settings')} icon={<Settings size={20} />} label="Site Settings" />
         </nav>
 
@@ -302,6 +780,7 @@ export default function AdminDashboard() {
               {activeTab === 'bookings' && 'Bookings'}
               {activeTab === 'tours' && 'Tour Packages'}
               {activeTab === 'blogs' && 'Blog Posts'}
+              {activeTab === 'reviews' && 'Reviews'}
               {activeTab === 'settings' && 'Site Settings'}
             </h1>
             <p style={{ color: '#64748b' }}>Welcome back, Admin.</p>
@@ -310,6 +789,13 @@ export default function AdminDashboard() {
             <RefreshCcw size={18} /> Sync
           </button>
         </header>
+
+        {error && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '1rem 1.25rem', marginBottom: '1.5rem', borderRadius: '0.75rem', background: '#fef2f2', border: '1px solid #fecaca', color: '#b91c1c', fontWeight: 600 }}>
+            <AlertCircle size={20} />
+            <span>Some data could not be loaded: {error}</span>
+          </div>
+        )}
 
         {isLoading && (
           <div style={{ textAlign: 'center', padding: '6rem' }}>
@@ -324,7 +810,7 @@ export default function AdminDashboard() {
             {activeTab === 'overview' && (
               <motion.div key="overview" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '1.5rem', marginBottom: '2.5rem' }}>
-                  <StatCard label="Total Revenue" value={`$${stats.revenue.toLocaleString()}`} icon={<DollarSign size={24} />} trend="+12.5%" className="stat-gradient-1" />
+                  <StatCard label="Total Revenue" value={formatMoney(stats.revenue, 'USD')} icon={<DollarSign size={24} />} trend="+12.5%" className="stat-gradient-1" />
                   <StatCard label="Total Bookings" value={stats.totalBookings} icon={<Users size={24} />} trend="+4 this week" className="stat-gradient-2" />
                   <StatCard label="Pending" value={stats.pendingBookings} icon={<Clock size={24} />} className="stat-gradient-3" />
                   <StatCard label="Blog Posts" value={blogs.length} icon={<BookOpen size={24} />} className="stat-gradient-4" />
@@ -369,7 +855,7 @@ export default function AdminDashboard() {
                     <h3 style={{ fontWeight: '800', marginBottom: '1.5rem' }}>Latest Blog Posts</h3>
                     {blogs.slice(0, 5).map(b => (
                       <div key={b._id} style={{ display: 'flex', gap: '1rem', alignItems: 'center', paddingBottom: '1rem', borderBottom: '1px solid #f1f5f9', marginBottom: '1rem' }}>
-                        <div style={{ width: '40px', height: '40px', borderRadius: '0.5rem', background: b.coverImage ? `url(${b.coverImage}) center/cover` : 'linear-gradient(135deg,hsl(var(--primary)),#6366f1)' }} />
+                        <div style={{ width: '40px', height: '40px', borderRadius: '0.5rem', background: b.coverImage ? `url(${mediaUrl(b.coverImage)}) center/cover` : 'linear-gradient(135deg,hsl(var(--primary)),#6366f1)' }} />
                         <div style={{ flex: 1 }}>
                           <p style={{ fontSize: '0.85rem', fontWeight: '700', color: '#0f172a' }}>{b.title}</p>
                           <p style={{ fontSize: '0.7rem', color: '#94a3b8' }}>{b.category}</p>
@@ -421,9 +907,17 @@ export default function AdminDashboard() {
                               <div style={{ fontSize: '0.75rem', color: '#64748b' }}>{new Date(b.bookingDate).toLocaleDateString()}</div>
                             </td>
                             <td><div className={`badge badge-${b.status}`}>{b.status}</div></td>
-                            <td><div style={{ fontWeight: '800' }}>${b.totalPrice?.toLocaleString()}</div></td>
+                            <td><div style={{ fontWeight: '800' }}>{formatMoney(b.totalPrice || 0, 'USD')}</div></td>
                             <td style={{ textAlign: 'right' }}>
                               <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end' }}>
+                                <button
+                                  onClick={() => handleOpenBookingModal(b)}
+                                  className="btn"
+                                  title="View details"
+                                  style={{ background: '#f1f5f9', color: '#475569', padding: '0.5rem' }}
+                                >
+                                  <Eye size={18} />
+                                </button>
                                 {b.status === 'pending' && (
                                   <button onClick={() => updateBookingStatus(b._id, 'confirmed')} className="btn" style={{ background: '#f0fdf4', color: '#15803d', padding: '0.5rem' }}>
                                     <CheckCircle2 size={18} />
@@ -458,24 +952,42 @@ export default function AdminDashboard() {
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '2rem' }}>
                   {packages.map(p => (
                     <div key={p._id} className="admin-card" style={{ padding: '0', overflow: 'hidden' }}>
+                      {(() => {
+                        const localized = {
+                          ...getPackageLocalizationFallback(p, language),
+                          ...getLocalizationBucket(p, language),
+                        };
+                        const displayTitle = localized.title || p.title;
+                        const displayDuration = localized.duration || p.duration;
+                        const displayType = localized.type || p.type;
+                        const displayCategory = localized.category || p.category;
+
+                        return (
+                          <>
                       <div style={{ position: 'relative', height: '180px' }}>
                         <img src={mediaUrl(p.image)} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                         <div style={{ position: 'absolute', top: '0.75rem', right: '0.75rem', display: 'flex', gap: '0.4rem' }}>
-                          <span style={{ background: '#0f172a', color: 'white', padding: '0.25rem 0.6rem', borderRadius: '1rem', fontSize: '0.7rem', fontWeight: '800' }}>{p.category}</span>
+                          <span style={{ background: '#0f172a', color: 'white', padding: '0.25rem 0.6rem', borderRadius: '1rem', fontSize: '0.7rem', fontWeight: '800' }}>{displayCategory}</span>
                           {p.featured && <span style={{ background: '#f59e0b', color: 'white', padding: '0.25rem 0.6rem', borderRadius: '1rem', fontSize: '0.7rem', fontWeight: '800' }}>⭐ Featured</span>}
+                          {p.isHot && <span style={{ background: '#ef4444', color: 'white', padding: '0.25rem 0.6rem', borderRadius: '1rem', fontSize: '0.7rem', fontWeight: '800' }}>🔥 Hot</span>}
                         </div>
                       </div>
                       <div style={{ padding: '1.25rem' }}>
-                        <h3 style={{ fontSize: '1rem', fontWeight: '800', marginBottom: '0.35rem', color: '#0f172a' }}>{p.title}</h3>
-                        <p style={{ fontSize: '0.8rem', color: '#64748b', marginBottom: '1rem' }}>{p.duration} · {p.type}</p>
+                        <h3 style={{ fontSize: '1rem', fontWeight: '800', marginBottom: '0.35rem', color: '#0f172a' }}>{displayTitle}</h3>
+                        <p style={{ fontSize: '0.8rem', color: '#64748b', marginBottom: '1rem' }}>{displayDuration} · {displayType}</p>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: '1rem', borderTop: '1px solid #f1f5f9' }}>
-                          <span style={{ fontSize: '1.35rem', fontWeight: '900', color: '#0f172a' }}>${p.price}</span>
+                          <span style={{ fontSize: '1.35rem', fontWeight: '900', color: '#0f172a' }}>
+                            {formatMoney(p.price || 0, 'USD')}
+                          </span>
                           <div style={{ display: 'flex', gap: '0.4rem' }}>
                             <button onClick={() => handleOpenPkgModal(p)} className="btn" style={{ padding: '0.5rem', background: '#f1f5f9', color: '#64748b' }}><Pencil size={16} /></button>
                             <button onClick={() => handleDeletePackage(p._id)} className="btn" style={{ padding: '0.5rem', background: '#fef2f2', color: '#ef4444' }}><Trash2 size={16} /></button>
                           </div>
                         </div>
                       </div>
+                          </>
+                        );
+                      })()}
                     </div>
                   ))}
                   {packages.length === 0 && (
@@ -509,7 +1021,7 @@ export default function AdminDashboard() {
                         <tr key={b._id}>
                           <td>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                              <div style={{ width: '48px', height: '36px', borderRadius: '0.5rem', background: b.coverImage ? `url(${b.coverImage}) center/cover` : 'linear-gradient(135deg,hsl(var(--primary)),#6366f1)', flexShrink: 0 }} />
+                              <div style={{ width: '48px', height: '36px', borderRadius: '0.5rem', background: b.coverImage ? `url(${mediaUrl(b.coverImage)}) center/cover` : 'linear-gradient(135deg,hsl(var(--primary)),#6366f1)', flexShrink: 0 }} />
                               <div>
                                 <div style={{ fontWeight: '800', color: '#0f172a', fontSize: '0.9rem' }}>{b.title}</div>
                                 <div style={{ fontSize: '0.72rem', color: '#94a3b8' }}>/{b.slug}</div>
@@ -546,6 +1058,157 @@ export default function AdminDashboard() {
                       )}
                     </tbody>
                   </table>
+                </div>
+              </motion.div>
+            )}
+
+            {/* ── REVIEWS ── */}
+            {activeTab === 'reviews' && (
+              <motion.div key="reviews" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem', flexWrap: 'wrap', gap: '1rem' }}>
+                  <p style={{ color: '#64748b', margin: 0 }}>
+                    {reviews.length} total · {reviews.filter(r => r.status === 'approved').length} approved · {reviews.filter(r => r.status === 'pending').length} pending
+                  </p>
+                  <div style={{ display: 'flex', gap: '0.5rem' }}>
+                    {['pending', 'approved', 'all'].map((f) => (
+                      <button
+                        key={f}
+                        onClick={() => setReviewFilter(f)}
+                        style={{
+                          padding: '0.5rem 1rem',
+                          borderRadius: '0.75rem',
+                          backgroundColor: reviewFilter === f ? '#0f172a' : '#f1f5f9',
+                          color: reviewFilter === f ? 'white' : '#64748b',
+                          border: 'none',
+                          fontWeight: '800',
+                          fontSize: '0.85rem',
+                          textTransform: 'capitalize',
+                          cursor: 'pointer',
+                        }}
+                      >
+                        {f}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="admin-card" style={{ padding: 0 }}>
+                  <div className="admin-table-container" style={{ border: 'none', borderRadius: 0 }}>
+                    <table className="admin-table">
+                      <thead>
+                        <tr>
+                          <th>Review</th>
+                          <th>Photos</th>
+                          <th>Status</th>
+                          <th style={{ textAlign: 'right' }}>Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {reviews
+                          .filter((r) => reviewFilter === 'all' || r.status === reviewFilter)
+                          .map((r) => (
+                            <tr key={r._id}>
+                              <td style={{ maxWidth: 520 }}>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap' }}>
+                                    <div style={{ fontWeight: '900', color: '#0f172a' }}>{r.name || '—'}</div>
+                                    {r.location && (
+                                      <div style={{ fontSize: '0.8rem', color: '#94a3b8', fontWeight: 800 }}>
+                                        {r.location}
+                                      </div>
+                                    )}
+                                  </div>
+                                  <div style={{ display: 'flex', gap: 4 }}>
+                                    {Array.from({ length: Math.max(1, Math.min(5, Number(r.rating) || 0)) }).map((_, i) => (
+                                      <Star key={i} size={14} fill="hsl(var(--primary))" color="hsl(var(--primary))" />
+                                    ))}
+                                  </div>
+                                  <div style={{ color: '#475569', lineHeight: 1.5 }}>
+                                    {String(r.text || '').slice(0, 220)}{String(r.text || '').length > 220 ? '…' : ''}
+                                  </div>
+                                  <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>
+                                    {r.created_at ? new Date(r.created_at).toLocaleString() : ''}
+                                  </div>
+                                </div>
+                              </td>
+
+                              <td>
+                                <div style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap' }}>
+                                  {(Array.isArray(r.photos) ? r.photos : []).slice(0, 3).map((p, idx) => (
+                                    <a key={`${p}-${idx}`} href={mediaUrl(p)} target="_blank" rel="noreferrer" title="Open photo">
+                                      <div
+                                        style={{
+                                          width: 46,
+                                          height: 36,
+                                          borderRadius: '0.5rem',
+                                          border: '1px solid #e2e8f0',
+                                          background: `url(${mediaUrl(p)}) center/cover`,
+                                        }}
+                                      />
+                                    </a>
+                                  ))}
+                                  {Array.isArray(r.photos) && r.photos.length > 3 && (
+                                    <div style={{ fontSize: '0.75rem', fontWeight: 900, color: '#64748b' }}>
+                                      +{r.photos.length - 3}
+                                    </div>
+                                  )}
+                                  {(!Array.isArray(r.photos) || r.photos.length === 0) && (
+                                    <div style={{ color: '#94a3b8', fontWeight: 800, fontSize: '0.85rem' }}>—</div>
+                                  )}
+                                </div>
+                              </td>
+
+                              <td>
+                                <span
+                                  style={{
+                                    padding: '0.3rem 0.75rem',
+                                    borderRadius: '1rem',
+                                    fontSize: '0.75rem',
+                                    fontWeight: '900',
+                                    background: r.status === 'approved' ? '#f0fdf4' : '#fff7ed',
+                                    color: r.status === 'approved' ? '#15803d' : '#9a3412',
+                                    textTransform: 'capitalize',
+                                  }}
+                                >
+                                  {r.status || 'pending'}
+                                </span>
+                              </td>
+
+                              <td style={{ textAlign: 'right' }}>
+                                <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end' }}>
+                                  {r.status === 'pending' && (
+                                    <button
+                                      onClick={() => approveReview(r._id)}
+                                      className="btn"
+                                      style={{ background: '#f0fdf4', color: '#15803d', padding: '0.5rem' }}
+                                      title="Approve"
+                                    >
+                                      <CheckCircle2 size={18} />
+                                    </button>
+                                  )}
+                                  <button
+                                    onClick={() => rejectReview(r._id)}
+                                    className="btn"
+                                    style={{ background: '#fef2f2', color: '#ef4444', padding: '0.5rem' }}
+                                    title="Reject & delete"
+                                  >
+                                    <Trash2 size={18} />
+                                  </button>
+                                </div>
+                              </td>
+                            </tr>
+                          ))}
+
+                        {reviews.filter((r) => reviewFilter === 'all' || r.status === reviewFilter).length === 0 && (
+                          <tr>
+                            <td colSpan={4} style={{ textAlign: 'center', padding: '3rem', color: '#94a3b8', fontWeight: 800 }}>
+                              No reviews found
+                            </td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
               </motion.div>
             )}
@@ -643,6 +1306,112 @@ export default function AdminDashboard() {
                     </FormField>
                   </SettingsSection>
 
+                  <SettingsSection title="Premium Services (Popup details)" icon={<Star size={18} />}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}>
+                      <p style={{ margin: 0, color: '#64748b', fontWeight: 700 }}>
+                        These details show in the popup when users click a service card.
+                      </p>
+                      <button
+                        type="button"
+                        className="btn"
+                        style={{ background: '#f1f5f9', color: '#475569' }}
+                        onClick={() => setSettingsForm((p) => ({ ...p, premiumServices: defaultPremiumServices }))}
+                      >
+                        Reset defaults
+                      </button>
+                    </div>
+
+                    {normalizedPremiumServices(settingsForm.premiumServices).map((svc) => (
+                      <div key={svc.key} style={{ border: '1px solid #e2e8f0', borderRadius: '0.9rem', padding: '1rem', background: '#ffffff' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '1rem', marginBottom: '0.75rem' }}>
+                          <div style={{ fontWeight: 900, color: '#0f172a', textTransform: 'capitalize' }}>{svc.key}</div>
+                          <div style={{ color: '#94a3b8', fontWeight: 800, fontSize: '0.8rem' }}>Card + Popup</div>
+                        </div>
+
+                        <div className="grid-2">
+                          <FormField label="Card short description">
+                            <input
+                              className="form-control"
+                              value={svc.shortDesc || ''}
+                              onChange={(e) => {
+                                const v = e.target.value;
+                                setSettingsForm((p) => {
+                                  const next = normalizedPremiumServices(p.premiumServices).map((x) => x.key === svc.key ? { ...x, shortDesc: v } : x);
+                                  return { ...p, premiumServices: next };
+                                });
+                              }}
+                              placeholder="Shown on the card"
+                            />
+                          </FormField>
+                          <FormField label="CTA Link (optional)">
+                            <input
+                              className="form-control"
+                              value={svc.ctaLink || ''}
+                              onChange={(e) => {
+                                const v = e.target.value;
+                                setSettingsForm((p) => {
+                                  const next = normalizedPremiumServices(p.premiumServices).map((x) => x.key === svc.key ? { ...x, ctaLink: v } : x);
+                                  return { ...p, premiumServices: next };
+                                });
+                              }}
+                              placeholder="/booking or https://..."
+                            />
+                          </FormField>
+                        </div>
+
+                        <div className="grid-2">
+                          <FormField label="CTA Label (optional)">
+                            <input
+                              className="form-control"
+                              value={svc.ctaLabel || ''}
+                              onChange={(e) => {
+                                const v = e.target.value;
+                                setSettingsForm((p) => {
+                                  const next = normalizedPremiumServices(p.premiumServices).map((x) => x.key === svc.key ? { ...x, ctaLabel: v } : x);
+                                  return { ...p, premiumServices: next };
+                                });
+                              }}
+                              placeholder="e.g. Request a quote"
+                            />
+                          </FormField>
+                          <FormField label="Highlights (one per line)">
+                            <textarea
+                              className="form-control"
+                              rows={4}
+                              style={{ resize: 'vertical' }}
+                              value={(Array.isArray(svc.highlights) ? svc.highlights : []).join('\n')}
+                              onChange={(e) => {
+                                const v = e.target.value.split('\n').map((x) => x.trim()).filter(Boolean);
+                                setSettingsForm((p) => {
+                                  const next = normalizedPremiumServices(p.premiumServices).map((x) => x.key === svc.key ? { ...x, highlights: v } : x);
+                                  return { ...p, premiumServices: next };
+                                });
+                              }}
+                              placeholder="Airport transfers&#10;Private driver&#10;Luxury options"
+                            />
+                          </FormField>
+                        </div>
+
+                        <FormField label="Popup details text">
+                          <textarea
+                            className="form-control"
+                            rows={5}
+                            style={{ resize: 'vertical' }}
+                            value={svc.details || ''}
+                            onChange={(e) => {
+                              const v = e.target.value;
+                              setSettingsForm((p) => {
+                                const next = normalizedPremiumServices(p.premiumServices).map((x) => x.key === svc.key ? { ...x, details: v } : x);
+                                return { ...p, premiumServices: next };
+                              });
+                            }}
+                            placeholder="Full details shown in popup..."
+                          />
+                        </FormField>
+                      </div>
+                    ))}
+                  </SettingsSection>
+
                   <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '1rem', marginTop: '2rem' }}>
                     {settingsSaved && (
                       <motion.span initial={{ opacity: 0 }} animate={{ opacity: 1 }} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: '#15803d', fontWeight: '700' }}>
@@ -693,6 +1462,9 @@ export default function AdminDashboard() {
                     <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', fontWeight: '700', color: '#475569' }}>
                       <input type="checkbox" checked={pkgForm.isLimitedTime} onChange={e => setPkgForm(p => ({ ...p, isLimitedTime: e.target.checked }))} style={{ accentColor: 'hsl(var(--primary))' }} /> Limited Time
                     </label>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', fontWeight: '700', color: '#475569' }}>
+                      <input type="checkbox" checked={pkgForm.isHot} onChange={e => setPkgForm(p => ({ ...p, isHot: e.target.checked }))} style={{ accentColor: 'hsl(var(--primary))' }} /> Hot Package (Popup)
+                    </label>
                   </div>
                 </FormField>
               </div>
@@ -704,24 +1476,190 @@ export default function AdminDashboard() {
               <FormField label="Cover image">
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
                   <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '0.75rem' }}>
-                    <input id="pkg-cover-file" type="file" accept="image/jpeg,image/png,image/webp,image/gif" style={{ display: 'none' }} onChange={handlePkgCoverFile} disabled={isUploadingCover} />
+                    <input id="pkg-cover-file" type="file" accept="image/jpeg,image/png,image/webp,image/gif" multiple style={{ display: 'none' }} onChange={handlePkgCoverFiles} disabled={isUploadingCover} />
                     <label htmlFor="pkg-cover-file" className="btn" style={{ cursor: isUploadingCover ? 'wait' : 'pointer', margin: 0, display: 'inline-flex', alignItems: 'center', gap: '0.5rem', background: '#f1f5f9', color: '#475569' }}>
-                      <Image size={18} /> {isUploadingCover ? 'Uploading…' : 'Choose file'}
+                      <Image size={18} /> {isUploadingCover ? 'Uploading…' : 'Choose up to 5 photos'}
                     </label>
+                    <button
+                      type="button"
+                      className="btn"
+                      style={{ margin: 0, display: 'inline-flex', alignItems: 'center', gap: '0.5rem', background: '#ecfeff', color: '#155e75' }}
+                      onClick={openPkgLibrary}
+                      disabled={isUploadingCover}
+                    >
+                      <Image size={18} /> Choose from library
+                    </button>
+                    <span style={{ fontSize: '0.85rem', color: '#64748b', fontWeight: 600 }}>
+                      {(Array.isArray(pkgForm.gallery) ? pkgForm.gallery.length : 0)}/5 selected
+                    </span>
                   </div>
-                  {pkgForm.image && (
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}>
-                      <img src={mediaUrl(pkgForm.image)} alt="" style={{ width: '120px', height: '72px', objectFit: 'cover', borderRadius: '0.5rem', border: '1px solid #e2e8f0' }} />
-                      <button type="button" className="btn" style={{ fontSize: '0.85rem', padding: '0.35rem 0.75rem', background: '#fef2f2', color: '#b91c1c' }} onClick={() => setPkgForm(p => ({ ...p, image: '' }))}>Remove</button>
+                  {(Array.isArray(pkgForm.gallery) ? pkgForm.gallery.length : 0) > 0 ? (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                      <div style={{ position: 'relative', width: '100%', maxWidth: '520px' }}>
+                        <img
+                          src={mediaUrl(pkgForm.gallery[pkgPreviewIndex])}
+                          alt=""
+                          style={{ width: '100%', height: '220px', objectFit: 'cover', borderRadius: '0.75rem', border: '1px solid #e2e8f0' }}
+                        />
+
+                        {(pkgForm.gallery.length > 1) && (
+                          <>
+                            <button
+                              type="button"
+                              className="btn"
+                              style={{
+                                position: 'absolute',
+                                left: '0.75rem',
+                                top: '50%',
+                                transform: 'translateY(-50%)',
+                                padding: '0.35rem 0.5rem',
+                                borderRadius: '999px',
+                                background: 'rgba(255,255,255,0.85)',
+                                color: '#0f172a',
+                                border: '1px solid rgba(15,23,42,0.12)'
+                              }}
+                              onClick={() => setPkgPreviewIndex((i) => (i - 1 + pkgForm.gallery.length) % pkgForm.gallery.length)}
+                              aria-label="Previous image"
+                            >
+                              <ChevronLeft size={18} />
+                            </button>
+                            <button
+                              type="button"
+                              className="btn"
+                              style={{
+                                position: 'absolute',
+                                right: '0.75rem',
+                                top: '50%',
+                                transform: 'translateY(-50%)',
+                                padding: '0.35rem 0.5rem',
+                                borderRadius: '999px',
+                                background: 'rgba(255,255,255,0.85)',
+                                color: '#0f172a',
+                                border: '1px solid rgba(15,23,42,0.12)'
+                              }}
+                              onClick={() => setPkgPreviewIndex((i) => (i + 1) % pkgForm.gallery.length)}
+                              aria-label="Next image"
+                            >
+                              <ChevronRight size={18} />
+                            </button>
+                          </>
+                        )}
+                      </div>
+
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+                        {pkgForm.gallery.map((u, idx) => (
+                          <button
+                            key={`${u}-${idx}`}
+                            type="button"
+                            onClick={() => setPkgPreviewIndex(idx)}
+                            style={{
+                              width: '58px',
+                              height: '40px',
+                              borderRadius: '0.5rem',
+                              border: idx === pkgPreviewIndex ? '2px solid hsl(var(--primary))' : '1px solid #e2e8f0',
+                              background: `url(${mediaUrl(u)}) center/cover`,
+                              cursor: 'pointer'
+                            }}
+                            aria-label={`Preview image ${idx + 1}`}
+                          />
+                        ))}
+                      </div>
+
+                      <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
+                        <button
+                          type="button"
+                          className="btn"
+                          style={{ fontSize: '0.85rem', padding: '0.35rem 0.75rem', background: '#fef2f2', color: '#b91c1c' }}
+                          onClick={() => {
+                            setPkgForm((p) => ({ ...p, gallery: [], image: '' }));
+                            setPkgPreviewIndex(0);
+                          }}
+                        >
+                          Remove all
+                        </button>
+                        <button
+                          type="button"
+                          className="btn"
+                          style={{ fontSize: '0.85rem', padding: '0.35rem 0.75rem', background: '#fff7ed', color: '#9a3412' }}
+                          onClick={() => {
+                            setPkgForm((p) => {
+                              const g = Array.isArray(p.gallery) ? p.gallery : [];
+                              const next = g.filter((_, i) => i !== pkgPreviewIndex);
+                              return { ...p, gallery: next, image: next[0] || '' };
+                            });
+                            setPkgPreviewIndex((i) => Math.max(0, i - 1));
+                          }}
+                          disabled={!pkgForm.gallery.length}
+                        >
+                          Remove current
+                        </button>
+                      </div>
                     </div>
+                  ) : (
+                    pkgForm.image ? (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}>
+                        <img src={mediaUrl(pkgForm.image)} alt="" style={{ width: '120px', height: '72px', objectFit: 'cover', borderRadius: '0.5rem', border: '1px solid #e2e8f0' }} />
+                        <button type="button" className="btn" style={{ fontSize: '0.85rem', padding: '0.35rem 0.75rem', background: '#fef2f2', color: '#b91c1c' }} onClick={() => setPkgForm(p => ({ ...p, image: '' }))}>Remove</button>
+                      </div>
+                    ) : null
                   )}
                 </div>
               </FormField>
+
+              {isPkgLibraryOpen && (
+                <div style={{ border: '1px solid #e2e8f0', borderRadius: '0.75rem', padding: '0.9rem', background: '#ffffff' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '1rem', marginBottom: '0.75rem' }}>
+                    <div style={{ fontWeight: 900, color: '#0f172a' }}>Image library (already uploaded)</div>
+                    <button type="button" className="btn" style={{ background: '#f1f5f9', color: '#64748b' }} onClick={() => setIsPkgLibraryOpen(false)}>
+                      Close
+                    </button>
+                  </div>
+
+                  {pkgLibraryError && (
+                    <div style={{ color: '#b91c1c', fontWeight: 700, marginBottom: '0.5rem' }}>{pkgLibraryError}</div>
+                  )}
+
+                  {isLoadingPkgLibrary ? (
+                    <div style={{ color: '#475569', fontWeight: 700 }}>Loading…</div>
+                  ) : (
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(90px, 1fr))', gap: '0.65rem' }}>
+                      {pkgLibraryFiles.map((f) => (
+                        <button
+                          key={f.path}
+                          type="button"
+                          onClick={() => addFromPkgLibrary(f.path)}
+                          disabled={(Array.isArray(pkgForm.gallery) ? pkgForm.gallery.length : 0) >= 5}
+                          title="Add to tour images"
+                          style={{
+                            border: '1px solid #e2e8f0',
+                            borderRadius: '0.6rem',
+                            overflow: 'hidden',
+                            background: '#fff',
+                            cursor: 'pointer',
+                            padding: 0,
+                          }}
+                        >
+                          <div style={{ width: '100%', aspectRatio: '1 / 1', background: `url(${mediaUrl(f.path)}) center/cover` }} />
+                        </button>
+                      ))}
+                      {!pkgLibraryFiles.length && !pkgLibraryError && (
+                        <div style={{ gridColumn: '1 / -1', color: '#64748b', fontWeight: 700 }}>
+                          No uploaded images found yet.
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+
               <FormField label="Description">
                 <textarea required className="form-control" rows={3} style={{ resize: 'vertical' }} value={pkgForm.description} onChange={e => setPkgForm(p => ({ ...p, description: e.target.value }))} />
               </FormField>
               <FormField label="Highlights (one per line)">
                 <textarea className="form-control" rows={3} style={{ resize: 'vertical' }} value={(pkgForm.highlights || []).join('\n')} onChange={e => setPkgForm(p => ({ ...p, highlights: e.target.value.split('\n').filter(Boolean) }))} placeholder="Temple of the Tooth Relic&#10;Elephant Safari&#10;Tea Plantation Visit" />
+              </FormField>
+              <FormField label="Itinerary (one day/activity per line)">
+                <textarea className="form-control" rows={4} style={{ resize: 'vertical' }} value={(pkgForm.itinerary || []).map((item) => (typeof item === 'string' ? item : (item?.day ? `${item.day}: ${(item.activities || []).join(', ')}` : JSON.stringify(item)))).join('\n')} onChange={e => setPkgForm(p => ({ ...p, itinerary: e.target.value.split('\n').filter(Boolean) }))} placeholder="Day 1: Arrival & city tour&#10;Day 2: Cultural sites visit" />
               </FormField>
               <div className="grid-2">
                 <FormField label="Inclusions (one per line)">
@@ -779,8 +1717,21 @@ export default function AdminDashboard() {
                   <input className="form-control" value={blogForm.readTime} onChange={e => setBlogForm(p => ({ ...p, readTime: e.target.value }))} placeholder="e.g. 5 min read" />
                 </FormField>
               </div>
-              <FormField label="Cover Image URL">
-                <input className="form-control" value={blogForm.coverImage} onChange={e => setBlogForm(p => ({ ...p, coverImage: e.target.value }))} placeholder="https://..." />
+              <FormField label="Cover image">
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '0.75rem' }}>
+                    <input id="blog-cover-file" type="file" accept="image/jpeg,image/png,image/webp,image/gif" style={{ display: 'none' }} onChange={handleBlogCoverFile} disabled={isUploadingBlogCover} />
+                    <label htmlFor="blog-cover-file" className="btn" style={{ cursor: isUploadingBlogCover ? 'wait' : 'pointer', margin: 0, display: 'inline-flex', alignItems: 'center', gap: '0.5rem', background: '#f1f5f9', color: '#475569' }}>
+                      <Image size={18} /> {isUploadingBlogCover ? 'Uploading…' : 'Choose file'}
+                    </label>
+                  </div>
+                  {blogForm.coverImage && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}>
+                      <img src={mediaUrl(blogForm.coverImage)} alt="" style={{ width: '120px', height: '72px', objectFit: 'cover', borderRadius: '0.5rem', border: '1px solid #e2e8f0' }} />
+                      <button type="button" className="btn" style={{ fontSize: '0.85rem', padding: '0.35rem 0.75rem', background: '#fef2f2', color: '#b91c1c' }} onClick={() => setBlogForm(p => ({ ...p, coverImage: '' }))}>Remove</button>
+                    </div>
+                  )}
+                </div>
               </FormField>
               <FormField label="Excerpt (short summary)">
                 <textarea required className="form-control" rows={2} style={{ resize: 'vertical' }} value={blogForm.excerpt} onChange={e => setBlogForm(p => ({ ...p, excerpt: e.target.value }))} placeholder="A short engaging summary of this article..." />
@@ -808,6 +1759,121 @@ export default function AdminDashboard() {
                 </button>
               </div>
             </form>
+          </Modal>
+        )}
+      </AnimatePresence>
+
+      {/* ── Booking Details Modal ── */}
+      <AnimatePresence>
+        {isBookingModalOpen && currentBooking && (
+          <Modal
+            onClose={() => {
+              setIsBookingModalOpen(false);
+              setCurrentBooking(null);
+            }}
+            title="Booking Details"
+          >
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
+                <span className={`badge badge-${currentBooking.status}`} style={{ fontSize: '0.75rem' }}>
+                  {currentBooking.status}
+                </span>
+                {!!currentBooking._id && (
+                  <span style={{ background: '#f1f5f9', color: '#475569', padding: '0.25rem 0.6rem', borderRadius: '999px', fontSize: '0.75rem', fontWeight: '800' }}>
+                    ID: {currentBooking._id}
+                  </span>
+                )}
+              </div>
+
+              <div className="admin-card" style={{ padding: '1.25rem', background: '#f8fafc', border: '1px solid #e2e8f0' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                  <div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', color: '#0f172a', fontWeight: '900' }}>
+                      <Users size={18} /> Customer
+                    </div>
+                    <div style={{ marginTop: '0.5rem', fontWeight: '800', color: '#0f172a' }}>{currentBooking.clientName || '—'}</div>
+                    <div style={{ marginTop: '0.25rem', display: 'flex', flexDirection: 'column', gap: '0.25rem', color: '#64748b', fontSize: '0.85rem' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}><Mail size={16} /> {currentBooking.email || '—'}</div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}><Phone size={16} /> {currentBooking.phone || '—'}</div>
+                    </div>
+                  </div>
+
+                  <div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', color: '#0f172a', fontWeight: '900' }}>
+                      <Briefcase size={18} /> Tour
+                    </div>
+                    <div style={{ marginTop: '0.5rem', fontWeight: '800', color: 'hsl(var(--primary))' }}>{currentBooking.tourTitle || '—'}</div>
+                    <div style={{ marginTop: '0.25rem', color: '#64748b', fontSize: '0.85rem' }}>
+                      Tour ID: {currentBooking.tourId || '—'}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1rem' }}>
+                <div className="admin-card" style={{ padding: '1rem' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', color: '#475569', fontWeight: '800', fontSize: '0.85rem' }}>
+                    <Calendar size={16} /> Travel date
+                  </div>
+                  <div style={{ marginTop: '0.35rem', fontWeight: '900', color: '#0f172a' }}>
+                    {currentBooking.bookingDate ? new Date(currentBooking.bookingDate).toLocaleDateString() : '—'}
+                  </div>
+                </div>
+                <div className="admin-card" style={{ padding: '1rem' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', color: '#475569', fontWeight: '800', fontSize: '0.85rem' }}>
+                    <Users size={16} /> Guests
+                  </div>
+                  <div style={{ marginTop: '0.35rem', fontWeight: '900', color: '#0f172a' }}>
+                    {Number.isFinite(Number(currentBooking.guests)) ? Number(currentBooking.guests) : (currentBooking.guests || '—')}
+                  </div>
+                </div>
+                <div className="admin-card" style={{ padding: '1rem' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', color: '#475569', fontWeight: '800', fontSize: '0.85rem' }}>
+                    <DollarSign size={16} /> Total price
+                  </div>
+                  <div style={{ marginTop: '0.35rem', fontWeight: '900', color: '#0f172a' }}>
+                    {formatMoney(Number(currentBooking.totalPrice || 0), 'USD')}
+                  </div>
+                </div>
+              </div>
+
+              <div className="admin-card" style={{ padding: '1rem' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', color: '#475569', fontWeight: '900' }}>
+                  <FileText size={18} /> Special requests
+                </div>
+                <div style={{ marginTop: '0.6rem', whiteSpace: 'pre-wrap', color: '#0f172a', lineHeight: 1.5 }}>
+                  {String(currentBooking.specialRequests || '').trim() ? currentBooking.specialRequests : '—'}
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem', flexWrap: 'wrap' }}>
+                {currentBooking.status === 'pending' && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      updateBookingStatus(currentBooking._id, 'confirmed');
+                      setIsBookingModalOpen(false);
+                      setCurrentBooking(null);
+                    }}
+                    className="btn"
+                    style={{ background: '#f0fdf4', color: '#15803d', padding: '0.65rem 0.9rem', fontWeight: '800' }}
+                  >
+                    <CheckCircle2 size={18} /> Confirm booking
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsBookingModalOpen(false);
+                    setCurrentBooking(null);
+                  }}
+                  className="btn"
+                  style={{ background: '#f1f5f9', color: '#475569', padding: '0.65rem 0.9rem', fontWeight: '800' }}
+                >
+                  Close
+                </button>
+              </div>
+            </div>
           </Modal>
         )}
       </AnimatePresence>

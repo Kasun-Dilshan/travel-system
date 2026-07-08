@@ -1,10 +1,11 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { motion } from 'framer-motion';
 import SubHero from '../components/SubHero';
 import SEO from '../components/SEO';
+import { useSite } from '../context/SiteContext';
 
 const TermsConditions = () => {
-  const [currentLang, setCurrentLang] = useState('en');
+  const { language, t } = useSite();
 
   const termsData = [
     {
@@ -120,9 +121,9 @@ const TermsConditions = () => {
       title: "14. Contact Information",
       content: "Serendib Travels and Tours",
       details: [
-        "Email: inbound_manager@serendibgroups.com",
-        "Phone: +94 74 411 04 16",
-        "87 Battaramulla - Pannipitiya Rd, Battaramulla 10120"
+        "Email: inbound_manager@serendibdestinations.com",
+        "Phone: 0744110416",
+        "No.87, Pannipitiya Road, Battramulla"
       ]
     }
   ];
@@ -134,12 +135,11 @@ const TermsConditions = () => {
         description="Read our terms and conditions for booking tours and services with Serendib Travel & Tours." 
       />
       <SubHero 
-        title="Terms & Conditions"
-        subtitle="Our commitment to transparency and your peace of mind while exploring the world with Serendib."
-        label="Legals & Policies"
+        title={t.termsTitle || 'Terms & Conditions'}
+        subtitle={t.termsSubtitle || 'Our commitment to transparency and your peace of mind while exploring the world with Serendib.'}
+        label={t.legalLabel || 'Legals & Policies'}
         image="https://images.unsplash.com/photo-1552465011-b4e21bf6e79a?q=80&w=2039&auto=format&fit=crop"
-        currentLang={currentLang}
-        onLangChange={setCurrentLang}
+        currentLang={language}
         accentColor="hsl(var(--primary))"
       />
 

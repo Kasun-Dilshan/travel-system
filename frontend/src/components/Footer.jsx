@@ -2,16 +2,25 @@ import React from 'react';
 import { motion } from 'framer-motion';
 import { Link } from 'react-router-dom';
 import { Camera, MessageCircle, Users, Heart } from 'lucide-react';
-import logoImg from '../assets/logo.png';
+import logoImg from '../assets/logo.webp';
+import { useSite } from '../context/SiteContext';
 
 export default function Footer() {
+  const { t } = useSite();
+
   return (
-    <footer style={{
-      padding: '100px 5% 50px',
-      backgroundColor: 'hsl(var(--secondary))',
-      color: 'white',
+    <footer
+      className="site-footer"
+      style={{
+      padding: 'clamp(3.5rem, 10vw, 100px) max(1.25rem, 5%) max(2.5rem, env(safe-area-inset-bottom, 0px))',
+      paddingLeft: 'max(1.25rem, 5%, env(safe-area-inset-left, 0px))',
+      paddingRight: 'max(1.25rem, 5%, env(safe-area-inset-right, 0px))',
+      backgroundColor: 'hsl(142, 76%, 15%)',
+      color: '#ffffff',
       position: 'relative',
-      overflow: 'hidden'
+      zIndex: 2,
+      overflow: 'hidden',
+      marginTop: 'auto',
     }}>
       {/* Decorative Gradient Overlay */}
       <div style={{
@@ -23,14 +32,14 @@ export default function Footer() {
         background: 'linear-gradient(to right, transparent, hsla(142, 76%, 36%, 0.3), transparent)',
       }} />
 
-      <div style={{
+      <div className="footer-grid" style={{
         maxWidth: '1440px',
         margin: '0 auto',
         display: 'grid',
-        gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))',
-        gap: '5rem'
+        gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 240px), 1fr))',
+        gap: 'clamp(2.5rem, 6vw, 5rem)'
       }}>
-        <div style={{ gridColumn: 'span 2' }}>
+        <div className="footer-brand-col" style={{ gridColumn: 'span 2' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '1.5rem', marginBottom: '2.5rem' }}>
             <img 
               src={logoImg} 
@@ -48,8 +57,8 @@ export default function Footer() {
             </div>
           </div>
           <p style={{ opacity: 0.6, lineHeight: 1.8, marginBottom: '3rem', maxWidth: '500px', fontSize: '1.1rem' }}>
-            Crafting unforgettable journeys across Sri Lanka and beyond. 
-            We provide luxury adventures that resonate with the soul and create lasting memories.
+            {t.footerDescription ||
+              "Crafting unforgettable journeys across Sri Lanka and beyond. We provide luxury adventures that resonate with the soul and create lasting memories."}
           </p>
           <div style={{ display: 'flex', gap: '1.5rem' }}>
             {[
@@ -82,18 +91,18 @@ export default function Footer() {
         </div>
 
         <div>
-          <h2 className="serif" style={{ color: 'white', marginBottom: '2rem', fontSize: '1.4rem', fontWeight: 600 }}>Explore</h2>
+          <h2 className="serif" style={{ color: 'white', marginBottom: '2rem', fontSize: '1.4rem', fontWeight: 600 }}>{t.footerExploreTitle}</h2>
           <ul style={{ listStyle: 'none', display: 'flex', flexDirection: 'column', gap: '1.25rem', opacity: 0.6, fontSize: '1.1rem' }}>
-            <li><Link to="/inbound" style={{ color: 'inherit', textDecoration: 'none' }}>Inbound Tours</Link></li>
-            <li><Link to="/outbound" style={{ color: 'inherit', textDecoration: 'none' }}>Global Wonders</Link></li>
-            <li style={{ cursor: 'pointer' }}>Luxury Stays</li>
-            <li style={{ cursor: 'pointer' }}>Curated Blogs</li>
+            <li><Link to="/inbound" style={{ color: 'inherit', textDecoration: 'none' }}>{t.footerExploreInbound}</Link></li>
+            <li><Link to="/outbound" style={{ color: 'inherit', textDecoration: 'none' }}>{t.footerExploreOutbound}</Link></li>
+            <li style={{ cursor: 'pointer' }}>{t.footerExploreLuxuryStays}</li>
+            <li style={{ cursor: 'pointer' }}>{t.footerExploreCuratedBlogs}</li>
           </ul>
         </div>
 
         <div>
-          <h2 className="serif" style={{ color: 'white', marginBottom: '2rem', fontSize: '1.4rem', fontWeight: 600 }}>Newsletter</h2>
-          <p style={{ opacity: 0.6, marginBottom: '2rem', lineHeight: 1.6 }}>Subscribe for exclusive travel insights and offers.</p>
+          <h2 className="serif" style={{ color: 'white', marginBottom: '2rem', fontSize: '1.4rem', fontWeight: 600 }}>{t.footerNewsletterTitle}</h2>
+          <p style={{ opacity: 0.6, marginBottom: '2rem', lineHeight: 1.6 }}>{t.footerNewsletterSubtitle}</p>
           <div style={{ 
             display: 'flex', 
             flexDirection: 'column',
@@ -103,7 +112,7 @@ export default function Footer() {
             <input 
               id="newsletter-email"
               type="email" 
-              placeholder="Your email address" 
+              placeholder={t.footerEmailPlaceholder}
               aria-label="Email address for newsletter"
               style={{
                 padding: '1.25rem 1.5rem',
@@ -119,15 +128,15 @@ export default function Footer() {
               className="btn btn-primary" 
               style={{ padding: '1.25rem', borderRadius: '1rem', width: '100%', fontWeight: 700 }}
             >
-              Subscribe Now
+              {t.footerSubscribeNow}
             </button>
           </div>
         </div>
       </div>
 
-      <div style={{
+      <div className="footer-bottom-bar" style={{
         maxWidth: '1440px',
-        margin: '80px auto 0',
+        margin: 'clamp(3rem, 8vw, 80px) auto 0',
         paddingTop: '30px',
         borderTop: '1px solid rgba(255,255,255,0.05)',
         display: 'flex',
@@ -156,15 +165,27 @@ export default function Footer() {
           </Link> 
           2026 Serendib Travel & Tours. Elevating every journey.
         </p>
-        <div style={{ display: 'flex', gap: '3rem' }}>
-          <Link to="/privacy" style={{ color: 'inherit', textDecoration: 'none' }}><span>Privacy Policy</span></Link>
-          <Link to="/terms" style={{ color: 'inherit', textDecoration: 'none' }}><span>Terms</span></Link>
-          <Link to="/cookies" style={{ color: 'inherit', textDecoration: 'none' }}><span>Cookies</span></Link>
+        <div className="footer-legal-links" style={{ display: 'flex', gap: 'clamp(1rem, 4vw, 3rem)', flexWrap: 'wrap' }}>
+          <Link to="/privacy" style={{ color: 'inherit', textDecoration: 'none' }}><span>{t.footerPrivacyPolicy}</span></Link>
+          <Link to="/terms" style={{ color: 'inherit', textDecoration: 'none' }}><span>{t.footerTerms}</span></Link>
+          <Link to="/cookies" style={{ color: 'inherit', textDecoration: 'none' }}><span>{t.footerCookies}</span></Link>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-          Made with <Heart size={16} fill="currentColor" /> for the curious traveler
+          {t.footerMadeWith} <Heart size={16} fill="currentColor" /> {t.footerMadeWithSuffix}
         </div>
       </div>
+
+      <style>{`
+        @media (max-width: 720px) {
+          .footer-brand-col { grid-column: span 1 !important; }
+          .footer-bottom-bar {
+            flex-direction: column !important;
+            align-items: flex-start !important;
+            text-align: left;
+          }
+          .footer-legal-links { width: 100%; justify-content: flex-start; }
+        }
+      `}</style>
     </footer>
   );
 }

@@ -1,9 +1,11 @@
 import React from 'react';
 import { motion } from 'framer-motion';
 import { CheckCircle2, ShieldCheck, Star, Users } from 'lucide-react';
-import ellaImg from '../assets/ella.png';
+import ellaImg from '../assets/ella.webp';
+import { useSite } from '../context/SiteContext';
 
 export default function AboutUs() {
+  const { t } = useSite();
   const containerVariants = {
     hidden: { opacity: 0 },
     visible: {
@@ -27,18 +29,18 @@ export default function AboutUs() {
   const features = [
     {
       icon: <ShieldCheck size={22} />,
-      title: "Trusted Expertise",
-      description: "Over a decade of crafting unforgettable journeys across the globe."
+      title: t?.aboutFeature1Title || "Trusted Expertise",
+      description: t?.aboutFeature1Desc || "Over a decade of crafting unforgettable journeys across the globe."
     },
     {
       icon: <Star size={22} />,
-      title: "Premium Quality",
-      description: "Handpicked accommodations and elite experiences for every traveler."
+      title: t?.aboutFeature2Title || "Premium Quality",
+      description: t?.aboutFeature2Desc || "Handpicked accommodations and elite experiences for every traveler."
     },
     {
       icon: <Users size={22} />,
-      title: "Personalized Service",
-      description: "Dedicated travel specialists who treat your trip as their own."
+      title: t?.aboutFeature3Title || "Personalized Service",
+      description: t?.aboutFeature3Desc || "Dedicated travel specialists who treat your trip as their own."
     }
   ];
 
@@ -59,10 +61,10 @@ export default function AboutUs() {
           viewport={{ once: true, margin: "-100px" }}
         >
           <motion.span variants={itemVariants} className="section-label" style={{ color: 'hsl(var(--primary))', display: 'block', marginBottom: '1rem' }}>
-            Our Story
+            {t?.aboutLabel || 'Our Story'}
           </motion.span>
           <motion.h2 className="serif" variants={itemVariants} style={{ fontSize: 'clamp(2.5rem, 5vw, 3.5rem)', color: 'hsl(var(--secondary))', fontWeight: 800, marginBottom: '2rem', lineHeight: 1.1 }}>
-            Crafting Memories <br/> Beyond Borders
+            {(t?.aboutTitleLine1 || 'Crafting Memories')} <br /> {(t?.aboutTitleLine2 || 'Beyond Borders')}
           </motion.h2>
           <motion.p variants={itemVariants} style={{ 
             fontSize: '1.15rem', 
@@ -72,7 +74,8 @@ export default function AboutUs() {
             lineHeight: 1.7,
             maxWidth: '550px'
           }}>
-            At Serendib Travel & Tours, we believe travel is more than just visiting a destination; it's about the stories you bring home. We specialize in creating bespoke travel experiences that blend luxury, adventure, and cultural immersion.
+            {t?.aboutBody ||
+              "At Serendib Travel & Tours, we believe travel is more than just visiting a destination; it's about the stories you bring home. We specialize in creating bespoke travel experiences that blend luxury, adventure, and cultural immersion."}
           </motion.p>
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
@@ -175,7 +178,7 @@ export default function AboutUs() {
             </div>
             <div>
               <p style={{ fontWeight: '800', lineHeight: 1.2, color: 'hsl(var(--secondary))', fontSize: '1.1rem' }}>
-                Years of <br/> Excellence
+                {(t?.aboutYearsLine1 || 'Years of')} <br /> {(t?.aboutYearsLine2 || 'Excellence')}
               </p>
             </div>
           </motion.div>

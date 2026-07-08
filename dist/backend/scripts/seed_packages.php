@@ -33,8 +33,8 @@ $packages = [
     [
         'title' => 'Sigiriya Rock Fortress',
         'price' => 200,
-        'image' => '/src/assets/sigiriya.png',
-        'gallery' => ['/src/assets/sigiriya.png', '/src/assets/sigiriya-2.png'],
+        'image' => '/src/assets/sigiriya.webp',
+        'gallery' => ['/src/assets/sigiriya.webp', '/src/assets/sigiriya-2.webp'],
         'duration' => 'Full Day',
         'description' => "Scale the majestic 'Lion Rock', a UNESCO World Heritage site featuring ancient frescoes and symmetrical water gardens.",
         'itinerary' => [
@@ -50,8 +50,8 @@ $packages = [
     [
         'title' => 'Ella Adventure',
         'price' => 150,
-        'image' => '/src/assets/ella.png',
-        'gallery' => ['/src/assets/ella.png', '/src/assets/ella-2.png'],
+        'image' => '/src/assets/ella.webp',
+        'gallery' => ['/src/assets/ella.webp', '/src/assets/ella-2.webp'],
         'duration' => 'Full Day',
         'description' => "Trek through misty mountains to find the iconic Nine Arch Bridge and Little Adam's Peak.",
         'itinerary' => [
@@ -67,8 +67,8 @@ $packages = [
     [
         'title' => 'Galle Heritage Trip',
         'price' => 120,
-        'image' => '/src/assets/galle.png',
-        'gallery' => ['/src/assets/galle.png', '/src/assets/galle-2.png'],
+        'image' => '/src/assets/galle.webp',
+        'gallery' => ['/src/assets/galle.webp', '/src/assets/galle-2.webp'],
         'duration' => 'Full Day',
         'description' => 'A walk through time in the Dutch Fort of Galle followed by the golden beaches of Unawatuna.',
         'itinerary' => [
@@ -84,8 +84,8 @@ $packages = [
     [
         'title' => 'Kandy Cultural Tour',
         'price' => 80,
-        'image' => '/src/assets/kandy.png',
-        'gallery' => ['/src/assets/kandy.png', '/src/assets/kandy-2.png', '/src/assets/kandy-3.png'],
+        'image' => '/src/assets/kandy.webp',
+        'gallery' => ['/src/assets/kandy.webp', '/src/assets/kandy-2.webp', '/src/assets/kandy-3.webp'],
         'duration' => 'Full Day',
         'description' => 'Visit the sacred Temple of the Tooth and witness a vibrant traditional dance performance.',
         'itinerary' => [
@@ -101,8 +101,8 @@ $packages = [
     [
         'title' => 'Paris Romance',
         'price' => 1200,
-        'image' => '/src/assets/paris.png',
-        'gallery' => ['/src/assets/paris.png'],
+        'image' => '/src/assets/paris.webp',
+        'gallery' => ['/src/assets/paris.webp'],
         'duration' => '5 Days / 4 Nights',
         'description' => 'Experience the City of Lights with private tours of the Eiffel Tower and Louvre Museum.',
         'itinerary' => [
@@ -118,8 +118,8 @@ $packages = [
     [
         'title' => 'Tokyo Neon Nights',
         'price' => 1500,
-        'image' => '/src/assets/tokyo.png',
-        'gallery' => ['/src/assets/tokyo.png'],
+        'image' => '/src/assets/tokyo.webp',
+        'gallery' => ['/src/assets/tokyo.webp'],
         'duration' => '6 Days / 5 Nights',
         'description' => 'A perfect blend of ancient tradition and futuristic technology in the heart of Japan.',
         'itinerary' => [
@@ -136,8 +136,8 @@ $packages = [
     [
         'title' => 'Dubai Luxury Desert',
         'price' => 900,
-        'image' => '/src/assets/dubai.png',
-        'gallery' => ['/src/assets/dubai.png'],
+        'image' => '/src/assets/dubai.webp',
+        'gallery' => ['/src/assets/dubai.webp'],
         'duration' => '4 Days / 3 Nights',
         'description' => "Thrill-seeking in the desert and luxury shopping in the world's grandest malls.",
         'itinerary' => [
@@ -152,8 +152,8 @@ $packages = [
     [
         'title' => 'Sydney Harbor Escape',
         'price' => 1100,
-        'image' => '/src/assets/sydney.png',
-        'gallery' => ['/src/assets/sydney.png'],
+        'image' => '/src/assets/sydney.webp',
+        'gallery' => ['/src/assets/sydney.webp'],
         'duration' => '5 Days / 4 Nights',
         'description' => 'Sun, surf, and icons. Explore the Opera House and the famous Bondi Beach.',
         'itinerary' => [

@@ -34,8 +34,8 @@ if (is_file($envFile)) {
 $host = (string) (getenv('DB_HOST') !== false ? getenv('DB_HOST') : 'localhost');
 $port = (string) (getenv('DB_PORT') !== false ? getenv('DB_PORT') : '3306');
 // Local/dev friendly defaults. Configure real credentials via `.env`.
-$db   = (string) (getenv('DB_NAME') !== false ? getenv('DB_NAME') : 'dbo1lxl1k7nnt9');
-$user = (string) (getenv('DB_USER') !== false ? getenv('DB_USER') : 'udc6aaxwhieco');
+$db   = (string) (getenv('DB_NAME') !== false ? getenv('DB_NAME') : 'seredpjb_travel');
+$user = (string) (getenv('DB_USER') !== false ? getenv('DB_USER') : 'seredpjb_traveluser');
 $pass = (string) (getenv('DB_PASS') !== false ? getenv('DB_PASS') : '2n221yigAO%1');
 
 $charset = (string) (getenv('DB_CHARSET') !== false ? getenv('DB_CHARSET') : 'utf8mb4');

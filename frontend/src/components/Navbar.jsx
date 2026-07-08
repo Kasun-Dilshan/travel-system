@@ -1,14 +1,17 @@
 import React, { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Link, useLocation } from "react-router-dom";
-import logoImg from "../assets/logo.png";
+import logoImg from "../assets/logo.webp";
 import { Menu, X, ChevronRight } from "lucide-react";
 import LanguagePicker from "./LanguagePicker";
+import CurrencyPicker from "./CurrencyPicker";
+import { useSite } from "../context/SiteContext";
 
-export default function Navbar({ currentLanguage = 'en', onLanguageChange }) {
+export default function Navbar() {
   const [scrolled, setScrolled] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const location = useLocation();
+  const { language, setLanguage, t } = useSite();
 
   useEffect(() => {
     const handleScroll = () => {
@@ -19,10 +22,11 @@ export default function Navbar({ currentLanguage = 'en', onLanguageChange }) {
   }, []);
 
   const navLinks = [
-    { name: "Home", path: "/" },
-    { name: "Inbound", path: "/inbound" },
-    { name: "Outbound", path: "/outbound" },
-    { name: "Blog", path: "/blog" },
+    { name: t.navHome, path: "/" },
+    { name: t.navInboundMain, path: "/inbound" },
+    { name: t.navOutboundMain, path: "/outbound" },
+    { name: t.navBlogMain, path: "/blog" },
+    { name: t.navReviews || "Reviews", path: "/reviews" },
   ];
 
 
@@ -39,7 +43,12 @@ export default function Navbar({ currentLanguage = 'en', onLanguageChange }) {
         left: 0,
         right: 0,
         zIndex: 1000,
-        padding: scrolled ? "0.75rem 0" : "1.5rem 0",
+        paddingTop: scrolled
+          ? "max(0.75rem, env(safe-area-inset-top, 0px))"
+          : "max(1.5rem, env(safe-area-inset-top, 0px))",
+        paddingBottom: scrolled ? "0.75rem" : "1.5rem",
+        paddingLeft: "max(5%, env(safe-area-inset-left, 0px))",
+        paddingRight: "max(5%, env(safe-area-inset-right, 0px))",
         transition: "all 0.4s cubic-bezier(0.16, 1, 0.3, 1)",
         backgroundColor: scrolled ? "hsla(142, 40%, 98%, 0.8)" : "transparent",
       }}
@@ -48,7 +57,7 @@ export default function Navbar({ currentLanguage = 'en', onLanguageChange }) {
         style={{
           maxWidth: "1440px",
           margin: "0 auto",
-          padding: "0 5%",
+          padding: 0,
           display: "flex",
           justifyContent: "space-between",
           alignItems: "center",
@@ -151,8 +160,9 @@ export default function Navbar({ currentLanguage = 'en', onLanguageChange }) {
             </Link>
           ))}
           
-          <div style={{ marginLeft: "1rem" }}>
-            <LanguagePicker currentLang={currentLanguage} onSelect={onLanguageChange} darkMode={!scrolled} />
+          <div style={{ marginLeft: "1rem", display: "flex", gap: "0.75rem", alignItems: "center" }}>
+            <CurrencyPicker darkMode={!scrolled} />
+            <LanguagePicker currentLang={language} onSelect={setLanguage} darkMode={!scrolled} />
           </div>
         </div>
  
@@ -190,6 +200,8 @@ export default function Navbar({ currentLanguage = 'en', onLanguageChange }) {
               right: 0,
               background: "white",
               padding: "2rem",
+              paddingLeft: "max(2rem, env(safe-area-inset-left, 0px))",
+              paddingRight: "max(2rem, env(safe-area-inset-right, 0px))",
               borderBottom: "1px solid hsl(var(--glass-border))",
               boxShadow: "0 20px 40px rgba(0,0,0,0.1)",
               zIndex: 999,
@@ -223,7 +235,7 @@ export default function Navbar({ currentLanguage = 'en', onLanguageChange }) {
                 className="btn btn-primary"
                 style={{ marginTop: "1rem" }}
               >
-                Book Your Trip
+                {t.navBookingMain}
               </Link>
               
               <div style={{ 
@@ -231,9 +243,13 @@ export default function Navbar({ currentLanguage = 'en', onLanguageChange }) {
                 paddingTop: "1.5rem", 
                 borderTop: "1px solid hsl(var(--glass-border))",
                 display: "flex",
-                justifyContent: "center"
+                justifyContent: "center",
+                gap: "0.75rem",
+                alignItems: "center",
+                flexWrap: "wrap"
               }}>
-                <LanguagePicker currentLang={currentLanguage} onSelect={onLanguageChange} darkMode={false} />
+                <CurrencyPicker darkMode={false} />
+                <LanguagePicker currentLang={language} onSelect={setLanguage} darkMode={false} />
               </div>
             </div>
           </motion.div>

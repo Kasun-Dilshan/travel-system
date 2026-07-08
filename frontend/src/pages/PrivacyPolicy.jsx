@@ -1,10 +1,11 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { motion } from 'framer-motion';
 import SubHero from '../components/SubHero';
 import SEO from '../components/SEO';
+import { useSite } from '../context/SiteContext';
 
 const PrivacyPolicy = () => {
-  const [currentLang, setCurrentLang] = useState('en');
+  const { language, t } = useSite();
 
   const privacyData = [
     {
@@ -133,9 +134,9 @@ const PrivacyPolicy = () => {
       content: "For any questions regarding this Privacy Policy:",
       details: [
         "Serendib Travels and Tours",
-        "Email: inbound_manager@serendibgroups.com",
-        "Phone: +94 74 411 04 16",
-        "87 Battaramulla - Pannipitiya Rd, Battaramulla 10120"
+        "Email: inbound_manager@serendibdestinations.com",
+        "Phone: 0744110416",
+        "No.87, Pannipitiya Road, Battramulla"
       ]
     }
   ];
@@ -147,12 +148,11 @@ const PrivacyPolicy = () => {
         description="Learn how Serendib Travel & Tours collects, uses, and protects your personal data."
       />
       <SubHero 
-        title="Privacy Policy"
-        subtitle="Your privacy is our priority. We are committed to safeguarding your personal data and ensuring transparency in how we handle your information."
-        label="Legals & Policies"
+        title={t.privacyTitle || 'Privacy Policy'}
+        subtitle={t.privacySubtitle || 'Your privacy is our priority. We are committed to safeguarding your personal data and ensuring transparency in how we handle your information.'}
+        label={t.legalLabel || 'Legals & Policies'}
         image="https://images.unsplash.com/photo-1450101499163-c8848c66ca85?q=80&w=2070&auto=format&fit=crop"
-        currentLang={currentLang}
-        onLangChange={setCurrentLang}
+        currentLang={language}
         accentColor="hsl(var(--primary))"
       />
 

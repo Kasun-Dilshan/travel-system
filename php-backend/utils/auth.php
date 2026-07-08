@@ -63,6 +63,29 @@ function getBearerToken() {
     if ($token && preg_match('/Bearer\s+(\S+)/i', $token, $matches)) {
         return $matches[1];
     }
+
+    // Multipart uploads: many Apache/CGI setups strip Authorization; duplicate JWT here.
+    $xt = $_SERVER['HTTP_X_ADMIN_TOKEN'] ?? '';
+    if (is_string($xt) && $xt !== '') {
+        $xt = trim($xt);
+        if (preg_match('/Bearer\s+(\S+)/i', $xt, $m)) {
+            return $m[1];
+        }
+        return $xt;
+    }
+
+    // Last resort: same token in POST body (always parsed for multipart/form-data).
+    if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' && isset($_POST['admin_token'])) {
+        $t = $_POST['admin_token'];
+        if (is_string($t) && $t !== '') {
+            $t = trim($t);
+            if (preg_match('/Bearer\s+(\S+)/i', $t, $m)) {
+                return $m[1];
+            }
+            return $t;
+        }
+    }
+
     return null;
 }
 

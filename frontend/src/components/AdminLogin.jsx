@@ -25,11 +25,23 @@ export default function AdminLogin({ onLogin }) {
       const data = isJson ? await res.json() : await res.text();
 
       if (!res.ok) {
-        const message =
-          isJson
-            ? (data?.message || 'Invalid credentials')
-            : 'Server returned HTML instead of JSON. Check that /api routes are not being redirected to the frontend.';
+        let message = isJson ? (data?.message || 'Invalid credentials') : null;
+        if (!message) {
+          if (res.status === 404) {
+            message =
+              'API not found on the server. Upload the full dist/backend folder to public_html (api/, config/, utils/, .htaccess, .env), then visit /health.php to verify.';
+          } else {
+            message =
+              'Server returned HTML instead of JSON. Check that /api routes are not being redirected to the frontend.';
+          }
+        }
         throw new Error(message);
+      }
+
+      if (!isJson) {
+        throw new Error(
+          'Server returned HTML instead of JSON. Deploy dist/backend/ to your web root so /api/auth/login reaches the PHP backend.'
+        );
       }
 
       // Store the JWT token

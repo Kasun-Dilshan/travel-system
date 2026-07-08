@@ -1,7 +1,10 @@
 // Prefer same-origin `/api` so Vite/Vercel/proxies can route requests.
 // If you host the PHP backend elsewhere, set `VITE_API_URL` to that origin + `/api`.
-// Example: https://your-domain.com/api
+// Example: https://serendibdestinations.com/api
 const API_URL = import.meta.env.VITE_API_URL || '/api';
+
+/** Public site origin (SEO, canonical URLs). Override with VITE_SITE_URL in production. */
+export const SITE_URL = String(import.meta.env.VITE_SITE_URL || 'https://serendibdestinations.com').replace(/\/$/, '');
 
 /** Strips accidental " []" / JSON-array junk from stored image paths (see package `image` column). */
 export function sanitizeMediaPath(path) {

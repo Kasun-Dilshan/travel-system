@@ -2,9 +2,9 @@ import React from 'react';
 import { motion } from 'framer-motion';
 
 // Import the branded logos
-import jetwingLogo from '../assets/jetwing-hotels.png';
-import cinnamonLogo from '../assets/cinnamon-hotels.png';
-import ugaLogo from '../assets/uga-escapes.png';
+import jetwingLogo from '../assets/jetwing-hotels.webp';
+import cinnamonLogo from '../assets/cinnamon-hotels.webp';
+import ugaLogo from '../assets/uga-escapes.webp';
 
 const PARTNERS = [
   { id: 1, name: 'Jetwing Hotels', logo: jetwingLogo },

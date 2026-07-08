@@ -1,19 +1,19 @@
 // Inbound Assets (Sri Lanka)
-import sigiriyaImg from "../assets/sigiriya.png";
-import ellaImg from "../assets/ella.png";
-import galleImg from "../assets/galle.png";
-import kandyImg from "../assets/kandy.png";
-import sigiriyaImg2 from "../assets/sigiriya-2.png";
-import ellaImg2 from "../assets/ella-2.png";
-import galleImg2 from "../assets/galle-2.png";
-import kandyImg2 from "../assets/kandy-2.png";
-import kandyImg3 from "../assets/kandy-3.png";
+import sigiriyaImg from "../assets/sigiriya.webp";
+import ellaImg from "../assets/ella.webp";
+import galleImg from "../assets/galle.webp";
+import kandyImg from "../assets/kandy.webp";
+import sigiriyaImg2 from "../assets/sigiriya-2.webp";
+import ellaImg2 from "../assets/ella-2.webp";
+import galleImg2 from "../assets/galle-2.webp";
+import kandyImg2 from "../assets/kandy-2.webp";
+import kandyImg3 from "../assets/kandy-3.webp";
 
 // Outbound Assets (Global)
-import parisImg from "../assets/paris.png";
-import tokyoImg from "../assets/tokyo.png";
-import dubaiImg from "../assets/dubai.png";
-import sydneyImg from "../assets/sydney.png";
+import parisImg from "../assets/paris.webp";
+import tokyoImg from "../assets/tokyo.webp";
+import dubaiImg from "../assets/dubai.webp";
+import sydneyImg from "../assets/sydney.webp";
 
 export const INBOUND_PACKAGES = [
   {

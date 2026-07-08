@@ -1,7 +1,7 @@
 import React from 'react';
 import { motion } from 'framer-motion';
 import { ChevronDown } from 'lucide-react';
-import LanguagePicker from './LanguagePicker';
+import { useSite } from '../context/SiteContext';
 
 const SubHero = ({ 
   title, 
@@ -9,10 +9,11 @@ const SubHero = ({
   label, 
   image, 
   currentLang, 
-  onLangChange, 
   accentColor = 'hsl(var(--primary))' 
 }) => {
-  const isRtl = currentLang === 'ar';
+  const { language } = useSite();
+  const activeLang = currentLang || language;
+  const isRtl = activeLang === 'ar';
 
   const containerVariants = {
     hidden: { opacity: 0 },
@@ -39,15 +40,15 @@ const SubHero = ({
       className="full-bleed"
       style={{
         position: 'relative',
-        height: '75vh',
-        minHeight: '600px',
+        height: 'clamp(320px, 72dvh, 88vh)',
+        minHeight: 'min(520px, 85dvh)',
         overflow: 'hidden',
         backgroundColor: '#000',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
         color: 'white',
-        marginBottom: '5rem',
+        marginBottom: 'clamp(2.5rem, 6vw, 5rem)',
         zIndex: 1
       }}
     >
@@ -88,7 +89,8 @@ const SubHero = ({
         zIndex: 2,
         maxWidth: '1440px',
         width: '100%',
-        padding: '0 8%',
+        paddingLeft: 'max(1rem, 5vw, env(safe-area-inset-left, 0px))',
+        paddingRight: 'max(1rem, 5vw, env(safe-area-inset-right, 0px))',
         textAlign: isRtl ? 'right' : 'left',
         display: 'flex',
         flexDirection: 'column',

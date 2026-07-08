@@ -19,6 +19,7 @@ CREATE TABLE IF NOT EXISTS packages (
     category ENUM('Inbound', 'Outbound') NOT NULL,
     type ENUM('Day', 'Round') DEFAULT 'Day',
     featured BOOLEAN DEFAULT FALSE,
+    isHot BOOLEAN DEFAULT FALSE,
     localizations JSON,
     route JSON,
     isLimitedTime BOOLEAN DEFAULT FALSE,
@@ -62,6 +63,7 @@ CREATE TABLE IF NOT EXISTS blogs (
     publishedAt DATETIME,
     seoTitle VARCHAR(255),
     seoDescription TEXT,
+    localizations JSON,
     readTime VARCHAR(50),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
@@ -96,8 +98,36 @@ CREATE TABLE IF NOT EXISTS site_settings (
     footerText TEXT,
     seoTitle VARCHAR(255),
     seoDescription TEXT,
+    premiumServices JSON,
+    localizations JSON,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 );
 
 -- Insert default settings if not exists
 INSERT IGNORE INTO site_settings (id, siteId, heroTitle, heroSubtitle) VALUES (1, 'main', 'Discover Sri Lanka\'s Hidden Paradise', 'Your journey to the gem of the Indian Ocean starts here.');
+
+-- 5. Reviews (user submitted; admin approves)
+CREATE TABLE IF NOT EXISTS reviews (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    name VARCHAR(120) NOT NULL,
+    location VARCHAR(120) DEFAULT '',
+    rating INT NOT NULL DEFAULT 5,
+    review_text TEXT NOT NULL,
+    status ENUM('pending', 'approved') NOT NULL DEFAULT 'pending',
+    approved_at DATETIME NULL,
+    ip VARCHAR(64) DEFAULT NULL,
+    user_agent VARCHAR(255) DEFAULT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    INDEX idx_reviews_status_created (status, created_at)
+);
+
+CREATE TABLE IF NOT EXISTS review_photos (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    review_id INT NOT NULL,
+    path VARCHAR(255) NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_review_photos_review_id FOREIGN KEY (review_id)
+        REFERENCES reviews(id) ON DELETE CASCADE,
+    INDEX idx_review_photos_review_id (review_id)
+);

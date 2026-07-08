@@ -1,54 +1,194 @@
 import React, { useState } from 'react';
+import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
-import { X, Clock, MapPin, CheckCircle2, ShieldCheck, ChevronLeft, ChevronRight, Zap } from 'lucide-react';
+import { X, Clock, MapPin, CheckCircle2, XCircle, ShieldCheck, ChevronLeft, ChevronRight, Zap } from 'lucide-react';
 import MapComponent from './MapComponent';
-import { TRANSLATIONS } from '../data/translations';
-import { mediaUrl } from '../config';
+import API_URL, { mediaUrl } from '../config';
+import { useSite } from '../context/SiteContext';
+import { getLocalizationBucket } from '../utils/localization';
+import { getPackageLocalizationFallback } from '../utils/packageLocalizationFallback';
+import { formatMoney } from '../utils/money';
 
-export default function TourModal({ isOpen, onClose, tour, lang = 'en' }) {
+export default function TourModal({ isOpen, onClose, tour, lang }) {
   const navigate = useNavigate();
   const [selectedDayIndex, setSelectedDayIndex] = useState(0);
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
-  const [windowWidth, setWindowWidth] = React.useState(window.innerWidth);
+  const [resolvedTour, setResolvedTour] = useState(null);
+  const { language, t, currency, usdToLkrRate } = useSite();
+  const activeLang = lang || language;
+  const [windowWidth, setWindowWidth] = React.useState(() => {
+    if (typeof window === 'undefined') return 1024;
+    return window.innerWidth || 1024;
+  });
 
   React.useEffect(() => {
+    if (typeof window === 'undefined') return;
     const handleResize = () => setWindowWidth(window.innerWidth);
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
   const isMobile = windowWidth < 968;
+  // Keep all hooks below unconditional: early return used to skip hooks and break opening the modal.
+  const activeTour = isOpen && tour ? (resolvedTour || tour) : null;
+
+  // When language changes, refetch a fresh localized version of this tour from API.
+  React.useEffect(() => {
+    let cancelled = false;
+    const id = tour?._id ?? tour?.id;
+    if (!isOpen || !id) {
+      setResolvedTour(null);
+      return;
+    }
+
+    (async () => {
+      try {
+        const res = await fetch(`${API_URL}/packages?id=${encodeURIComponent(id)}&lang=${encodeURIComponent(activeLang)}`);
+        if (!res.ok) throw new Error('Failed to fetch tour');
+        const data = await res.json();
+        if (!cancelled && data && (data._id || data.id)) {
+          setResolvedTour(data);
+        }
+      } catch {
+        if (!cancelled) setResolvedTour(null);
+      }
+    })();
+
+    return () => { cancelled = true; };
+  }, [isOpen, tour?._id, tour?.id, activeLang]);
+  
+  // Localized Content
+  const localized = {
+    ...getPackageLocalizationFallback(activeTour, activeLang),
+    ...getLocalizationBucket(activeTour, activeLang),
+  };
+  const displayTitle = localized.title || activeTour?.title;
+  const displayDescription = localized.description || activeTour?.description;
+  const displayDuration = localized.duration || activeTour?.duration;
+  const displayItinerary = localized.itinerary || activeTour?.itinerary;
+  const displayInclusionsRaw = localized.inclusions ?? activeTour?.inclusions ?? [];
+  const displayInclusions = (Array.isArray(displayInclusionsRaw) ? displayInclusionsRaw : [])
+    .map((i) => String(i || '').trim())
+    .filter(Boolean);
+
+  const displayExclusionsRaw = localized.exclusions ?? activeTour?.exclusions ?? [];
+  const displayExclusions = (Array.isArray(displayExclusionsRaw) ? displayExclusionsRaw : [])
+    .map((i) => String(i || '').trim())
+    .filter(Boolean);
+  const displayHighlightsRaw = localized.highlights ?? activeTour?.highlights ?? [];
+  const displayHighlights = (Array.isArray(displayHighlightsRaw) ? displayHighlightsRaw : [])
+    .map((h) => String(h || '').trim())
+    .filter(Boolean);
+
+  const itineraryArray = React.useMemo(() => {
+    if (Array.isArray(displayItinerary)) return displayItinerary;
+    if (displayItinerary == null) return [];
+    if (typeof displayItinerary === 'string') {
+      const s = displayItinerary.trim();
+      if (!s) return [];
+      if (s.startsWith('[') || s.startsWith('{')) {
+        try {
+          const parsed = JSON.parse(s);
+          if (Array.isArray(parsed)) return parsed;
+          if (parsed && typeof parsed === 'object' && Array.isArray(parsed.itinerary)) return parsed.itinerary;
+        } catch {
+          // ignore
+        }
+      }
+      return [s];
+    }
+    if (typeof displayItinerary === 'object') {
+      const maybe = displayItinerary;
+      if (Array.isArray(maybe.itinerary)) return maybe.itinerary;
+    }
+    return [];
+  }, [displayItinerary]);
+
+  const hasDayObjects = Boolean(itineraryArray[0] && typeof itineraryArray[0] === 'object' && itineraryArray[0].day);
+  const selectedDay = hasDayObjects ? itineraryArray[selectedDayIndex] : null;
+  const itineraryItems = hasDayObjects
+    ? (Array.isArray(selectedDay?.activities) ? selectedDay.activities : [])
+    : itineraryArray;
+
+  const cleanedItineraryItems = React.useMemo(() => {
+    if (!Array.isArray(itineraryItems)) return [];
+    return itineraryItems
+      .map((item) => {
+        if (typeof item === 'string') return item.trim();
+        if (item && typeof item === 'object') {
+          const v = item.activity ?? item.title ?? '';
+          return typeof v === 'string' ? v.trim() : String(v || '').trim();
+        }
+        return String(item || '').trim();
+      })
+      .filter(Boolean);
+  }, [itineraryItems]);
+
+  const stops = activeTour?.route?.stops ?? [];
+  const rawPath = activeTour?.route?.path ?? stops.map((s) => ({ lat: s.lat, lng: s.lng }));
+  const hasRoute = Array.isArray(stops) && stops.length > 0 && Array.isArray(rawPath) && rawPath.length > 0;
+
+  const imagesRaw = activeTour
+    ? (activeTour.images ?? activeTour.gallery ?? (activeTour.image ? [activeTour.image] : []))
+    : [];
+  const imagesList = Array.isArray(imagesRaw)
+    ? imagesRaw
+    : (typeof imagesRaw === 'string' && imagesRaw.trim() ? [imagesRaw] : []);
+  const images = imagesList.map((u) => mediaUrl(u)).filter(Boolean);
+  const hasMultipleImages = images.length > 1;
+
+  // Reset carousel state when opening or switching tours
+  React.useEffect(() => {
+    if (!isOpen || !tour) return;
+    setCurrentImageIndex(0);
+    setSelectedDayIndex(0);
+    setResolvedTour(null);
+  }, [isOpen, tour?._id, tour?.id]);
+
+  // Close on ESC + lock body scroll while open
+  React.useEffect(() => {
+    if (!isOpen || !tour) return;
+    if (typeof document === 'undefined') return;
+
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+
+    const onKeyDown = (e) => {
+      if (e.key === 'Escape') onClose?.();
+    };
+    window?.addEventListener?.('keydown', onKeyDown);
+
+    return () => {
+      document.body.style.overflow = prevOverflow;
+      window?.removeEventListener?.('keydown', onKeyDown);
+    };
+  }, [isOpen, onClose, tour]);
+
+  // Auto slideshow
+  React.useEffect(() => {
+    if (!isOpen || !hasMultipleImages) return;
+    const timer = setInterval(() => {
+      setCurrentImageIndex((prev) => (prev + 1) % images.length);
+    }, 4000);
+    return () => clearInterval(timer);
+  }, [isOpen, hasMultipleImages, images.length]);
 
   if (!isOpen || !tour) return null;
 
-  const t = TRANSLATIONS[lang] || TRANSLATIONS.en;
-  
-  // Localized Content
-  const localized = tour.localizations?.[lang] || {};
-  const displayTitle = localized.title || tour.title;
-  const displayDescription = localized.description || tour.description;
-  const displayItinerary = localized.itinerary || tour.itinerary;
-  const displayInclusions = localized.inclusions || tour.inclusions;
-
-  const stops = tour.route?.stops ?? [];
-  const rawPath = tour.route?.path ?? stops.map((s) => ({ lat: s.lat, lng: s.lng }));
-  const hasRoute = Array.isArray(stops) && stops.length > 0 && Array.isArray(rawPath) && rawPath.length > 0;
-
-  const images = (tour.images || [tour.image]).map((u) => mediaUrl(u));
-  const hasMultipleImages = images.length > 1;
-
   const nextImage = (e) => {
     e.stopPropagation();
+    if (!images.length) return;
     setCurrentImageIndex((prev) => (prev + 1) % images.length);
   };
 
   const prevImage = (e) => {
     e.stopPropagation();
+    if (!images.length) return;
     setCurrentImageIndex((prev) => (prev - 1 + images.length) % images.length);
   };
 
-  return (
+  const modal = (
     <AnimatePresence>
       <motion.div
         initial={{ opacity: 0 }}
@@ -60,11 +200,12 @@ export default function TourModal({ isOpen, onClose, tour, lang = 'en' }) {
           left: 0,
           right: 0,
           bottom: 0,
-          zIndex: 1000,
+          zIndex: 99999,
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
           padding: isMobile ? '0' : '1.5rem',
+          pointerEvents: 'auto',
         }}
       >
         {/* Backdrop */}
@@ -80,7 +221,8 @@ export default function TourModal({ isOpen, onClose, tour, lang = 'en' }) {
             right: 0,
             bottom: 0,
             backgroundColor: 'rgba(5, 46, 32, 0.9)',
-            backdropFilter: 'blur(8px)'
+            backdropFilter: 'blur(8px)',
+            zIndex: 0,
           }}
         />
 
@@ -91,7 +233,7 @@ export default function TourModal({ isOpen, onClose, tour, lang = 'en' }) {
           exit={{ opacity: 0, scale: 0.96, y: 16 }}
           transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
           onClick={(e) => e.stopPropagation()}
-          dir={lang === 'ar' ? 'rtl' : 'ltr'}
+          dir={activeLang === 'ar' ? 'rtl' : 'ltr'}
           style={{
             position: 'relative',
             width: '100%',
@@ -104,7 +246,8 @@ export default function TourModal({ isOpen, onClose, tour, lang = 'en' }) {
             boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)',
             display: 'flex',
             flexDirection: isMobile ? 'column' : 'row',
-            textAlign: lang === 'ar' ? 'right' : 'left'
+            textAlign: activeLang === 'ar' ? 'right' : 'left',
+            zIndex: 1,
           }}
         >
           {/* Left Side Section: Image Gallery */}
@@ -258,7 +401,7 @@ export default function TourModal({ isOpen, onClose, tour, lang = 'en' }) {
           }}>
             {/* Header Content Info */}
             <div style={{ padding: '3rem 3rem 1rem 3rem' }}>
-              {tour.isLimitedTime && (
+              {Boolean(tour.isLimitedTime) && (
                 <div style={{ 
                   display: 'inline-flex', 
                   alignItems: 'center', 
@@ -284,179 +427,90 @@ export default function TourModal({ isOpen, onClose, tour, lang = 'en' }) {
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: '1.5rem', color: 'hsl(var(--foreground) / 0.6)' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                       <Clock size={18} className="text-primary" />
-                      <span style={{ fontWeight: '600' }}>{tour.duration}</span>
+                      <span style={{ fontWeight: '600' }}>{displayDuration}</span>
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                       <MapPin size={18} className="text-primary" />
-                      <span style={{ fontWeight: '600' }}>Sri Lanka</span>
+                      <span style={{ fontWeight: '600' }}>{t.tourLocationSriLanka || 'Sri Lanka'}</span>
                     </div>
                   </div>
                 </div>
-
-                {/* Desktop Mini Booking Card */}
-                {!isMobile && (
-                  <div style={{ 
-                    backgroundColor: 'white', 
-                    padding: '1.5rem', 
-                    borderRadius: '1.5rem',
-                    border: '1px solid hsl(var(--glass-border))',
-                    boxShadow: 'var(--shadow-sm)',
-                    minWidth: '220px'
-                  }}>
-                    <span style={{ fontSize: '0.8rem', fontWeight: '800', color: 'hsl(var(--foreground) / 0.5)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                      {t.uiPriceFrom || 'Starting From'}
-                    </span>
-                    <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.25rem', marginBottom: '1rem' }}>
-                      <span style={{ fontSize: '2rem', fontWeight: '900', color: 'hsl(var(--secondary))' }}>${tour.price}</span>
-                      <span style={{ color: 'hsl(var(--foreground) / 0.5)', fontWeight: '700', fontSize: '0.85rem' }}>/person</span>
-                    </div>
-                    <button
-                      onClick={() => {
-                        onClose();
-                        navigate('/booking', { state: { tour } });
-                      }}
-                      className="btn btn-primary"
-                      style={{ width: '100%', padding: '0.8rem', borderRadius: '1rem', fontSize: '0.95rem' }}
-                    >
-                      {t.uiConfirmBooking || 'Confirm Booking'}
-                    </button>
-                  </div>
-                )}
               </div>
             </div>
 
             {/* Main Body Grid */}
-            <div style={{ padding: '0 3rem 3rem 3rem', display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 300px', gap: '3rem' }}>
+            <div style={{ padding: '0 3rem 3rem 3rem', display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 360px', gap: '3rem' }}>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '3.5rem' }}>
                 {/* Description */}
-                <div>
-                  <h3 style={{ fontSize: '1.4rem', fontWeight: '800', marginBottom: '1rem', color: 'hsl(var(--secondary))', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                    {t.uiDescription || 'Description'}
-                  </h3>
-                  <p style={{ fontSize: '1.15rem', lineHeight: 1.7, color: 'hsl(var(--foreground) / 0.85)', fontWeight: '450' }}>
-                    {displayDescription}
-                  </p>
-                </div>
+                {Boolean(displayDescription) && (
+                  <div>
+                    <h3 style={{ fontSize: '1.4rem', fontWeight: '800', marginBottom: '1.25rem', color: 'hsl(var(--secondary))' }}>
+                      {t.uiDescription || 'Description'}
+                    </h3>
+                    <p style={{ color: 'hsl(var(--foreground) / 0.75)', fontWeight: '600', lineHeight: 1.7, whiteSpace: 'pre-line' }}>
+                      {displayDescription}
+                    </p>
+                  </div>
+                )}
 
                 {/* Itinerary */}
-                <div style={{ position: 'relative' }}>
-                  <h3 style={{ fontSize: '1.4rem', fontWeight: '800', marginBottom: '1.5rem', color: 'hsl(var(--secondary))', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                    {t.uiItinerary || 'Itinerary'}
-                  </h3>
+                {cleanedItineraryItems.length > 0 && (
+                  <div>
+                    <h3 style={{ fontSize: '1.4rem', fontWeight: '800', marginBottom: '1.25rem', color: 'hsl(var(--secondary))' }}>
+                      {t.uiItinerary || 'Itinerary'}
+                    </h3>
 
-                  <div style={{ 
-                    display: displayItinerary[0]?.day ? 'grid' : 'block',
-                    gridTemplateColumns: displayItinerary[0]?.day ? 'minmax(100px, 140px) 1fr' : 'none',
-                    gap: '2rem',
-                    alignItems: 'start'
-                  }}>
-                    {/* Day Selector - Vertical Column */}
-                    {displayItinerary[0]?.day && (
-                      <div style={{ 
-                        display: 'flex', 
-                        flexDirection: 'column',
-                        gap: '0.6rem', 
-                        paddingRight: '1rem',
-                        borderRight: '1px solid hsl(var(--primary) / 0.1)',
-                        position: 'sticky',
-                        top: '1rem'
-                      }}>
-                        {displayItinerary.map((dayObj, idx) => (
-                          <button
-                            key={idx}
-                            onClick={() => setSelectedDayIndex(idx)}
-                            style={{
-                              padding: '0.8rem 1rem',
-                              borderRadius: '0.75rem',
-                              border: '1px solid',
-                              borderColor: selectedDayIndex === idx ? 'hsl(var(--primary))' : 'transparent',
-                              backgroundColor: selectedDayIndex === idx ? 'hsl(var(--primary) / 0.08)' : 'transparent',
-                              color: selectedDayIndex === idx ? 'hsl(var(--primary))' : 'hsl(var(--foreground) / 0.5)',
-                              fontWeight: '700',
-                              textAlign: 'left',
-                              cursor: 'pointer',
-                              transition: 'all 0.2s cubic-bezier(0.16, 1, 0.3, 1)',
-                              fontSize: '0.85rem',
-                              display: 'flex',
-                              alignItems: 'center',
-                              gap: '0.5rem'
-                            }}
-                          >
-                            <span style={{ 
-                              width: '20px', 
-                              height: '20px', 
-                              display: 'flex', 
-                              alignItems: 'center', 
-                              justifyContent: 'center',
-                              borderRadius: '4px',
-                              backgroundColor: selectedDayIndex === idx ? 'hsl(var(--primary))' : 'hsl(var(--primary) / 0.1)',
-                              color: selectedDayIndex === idx ? 'white' : 'hsl(var(--primary))',
-                              fontSize: '0.7rem',
-                              flexShrink: 0
-                            }}>
-                              {idx + 1}
-                            </span>
-                            {dayObj.day}
-                          </button>
-                        ))}
+                    {hasDayObjects && itineraryArray.length > 1 && (
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', marginBottom: '1.25rem' }}>
+                        {itineraryArray.map((dayObj, idx) => {
+                          const active = idx === selectedDayIndex;
+                          const label = dayObj?.day ? String(dayObj.day) : `Day ${idx + 1}`;
+                          return (
+                            <button
+                              key={`${label}-${idx}`}
+                              type="button"
+                              onClick={() => setSelectedDayIndex(idx)}
+                              style={{
+                                padding: '0.45rem 0.85rem',
+                                borderRadius: '999px',
+                                border: active ? '1px solid hsl(var(--primary))' : '1px solid hsl(var(--glass-border))',
+                                background: active ? 'hsl(var(--primary) / 0.08)' : 'white',
+                                color: active ? 'hsl(var(--secondary))' : 'hsl(var(--foreground) / 0.7)',
+                                fontWeight: 800,
+                                fontSize: '0.85rem',
+                                cursor: 'pointer',
+                                transition: 'all 0.2s ease',
+                              }}
+                            >
+                              {label}
+                            </button>
+                          );
+                        })}
                       </div>
                     )}
 
-                    {/* Activities List */}
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
-                      <AnimatePresence mode="wait">
-                        <motion.div
-                          key={selectedDayIndex}
-                          initial={{ opacity: 0, x: 10 }}
-                          animate={{ opacity: 1, x: 0 }}
-                          exit={{ opacity: 0, x: -10 }}
-                          transition={{ duration: 0.2, ease: 'easeOut' }}
-                        >
-                          {(displayItinerary[0]?.day ? displayItinerary[selectedDayIndex].activities : displayItinerary).map((item, idx) => (
-                            <div key={idx} style={{ 
-                              display: 'flex', 
-                              gap: '1.25rem', 
-                              padding: '1.25rem',
-                              borderRadius: '1.25rem',
-                              backgroundColor: 'hsl(var(--primary) / 0.03)',
-                              border: '1px solid hsl(var(--primary) / 0.05)',
-                              marginBottom: '0.75rem'
-                            }}>
-                              <div style={{ 
-                                width: '36px', 
-                                height: '36px', 
-                                borderRadius: '10px', 
-                                backgroundColor: 'white',
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.05)',
-                                flexShrink: 0,
-                                fontWeight: '900',
-                                color: 'hsl(var(--primary))',
-                                fontSize: '0.75rem'
-                              }}>
-                                {idx + 1}
-                              </div>
-                              <div>
-                                {typeof item === 'object' ? (
-                                  <>
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.25rem' }}>
-                                      <span style={{ fontWeight: '700', color: 'hsl(var(--primary))', fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{item.location}</span>
-                                    </div>
-                                    <p style={{ color: 'hsl(var(--foreground) / 0.8)', lineHeight: 1.5, fontWeight: '450', fontSize: '1rem' }}>{item.text}</p>
-                                  </>
-                                ) : (
-                                  <p style={{ color: 'hsl(var(--foreground) / 0.8)', lineHeight: 1.5, fontWeight: '450', fontSize: '1rem' }}>{item}</p>
-                                )}
-                              </div>
-                            </div>
-                          ))}
-                        </motion.div>
-                      </AnimatePresence>
+                    <div style={{
+                      backgroundColor: 'white',
+                      borderRadius: '1.5rem',
+                      border: '1px solid hsl(var(--glass-border))',
+                      padding: '1.5rem',
+                      boxShadow: 'var(--shadow-sm)',
+                    }}>
+                      {hasDayObjects && Boolean(selectedDay?.title) && (
+                        <div style={{ fontWeight: 900, color: 'hsl(var(--secondary))', marginBottom: '0.75rem' }}>
+                          {selectedDay.title}
+                        </div>
+                      )}
+                      <ul style={{ margin: 0, paddingLeft: '1.25rem', display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
+                        {cleanedItineraryItems.map((item, idx) => (
+                          <li key={`${String(item)}-${idx}`} style={{ color: 'hsl(var(--foreground) / 0.75)', fontWeight: 600, lineHeight: 1.6 }}>
+                            {item}
+                          </li>
+                        ))}
+                      </ul>
                     </div>
                   </div>
-                </div>
+                )}
 
                 {/* Inclusions */}
                 <div>
@@ -475,6 +529,25 @@ export default function TourModal({ isOpen, onClose, tour, lang = 'en' }) {
                   </div>
                 </div>
 
+                {/* Exclusions */}
+                {displayExclusions.length > 0 && (
+                  <div>
+                    <h3 style={{ fontSize: '1.4rem', fontWeight: '800', marginBottom: '1.25rem', color: 'hsl(var(--secondary))', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                      {t.uiExclusions || 'What\'s Not Included'}
+                    </h3>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '1rem' }}>
+                      {displayExclusions.map((item, idx) => (
+                        <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'hsl(var(--foreground) / 0.7)' }}>
+                          <div style={{ color: '#ef4444' }}>
+                            <XCircle size={16} />
+                          </div>
+                          <span style={{ fontSize: '0.95rem', fontWeight: '600', color: 'hsl(var(--foreground) / 0.8)' }}>{item}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
                 {/* Route Map */}
                 <div>
                   <h3 style={{ fontSize: '1.4rem', fontWeight: '800', marginBottom: '1rem', color: 'hsl(var(--secondary))', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
@@ -492,37 +565,73 @@ export default function TourModal({ isOpen, onClose, tour, lang = 'en' }) {
                     ) : (
                       <div style={{ padding: '2rem', textAlign: 'center', display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%' }}>
                         <p style={{ color: 'hsl(var(--foreground) / 0.5)', fontSize: '0.9rem' }}>
-                          Route coordinates coming soon.
+                          {t.uiRouteComingSoon || 'Route coordinates coming soon.'}
                         </p>
                       </div>
                     )}
                   </div>
                 </div>
+
               </div>
 
               {/* Sticky Sidebar Right (Desktop only) */}
               {!isMobile && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem', position: 'sticky', top: '0' }}>
-                   {/* This area can be used for extra info or widgets */}
-                   <div style={{
-                     padding: '2rem',
+                   {/* Desktop booking + details */}
+                   <div style={{ 
+                     backgroundColor: 'white', 
+                     padding: '1.5rem', 
                      borderRadius: '1.5rem',
-                     backgroundColor: 'hsl(var(--primary) / 0.03)',
-                     border: '1px solid hsl(var(--primary) / 0.08)',
+                     border: '1px solid hsl(var(--glass-border))',
+                     boxShadow: 'var(--shadow-sm)',
                    }}>
-                     <h4 style={{ fontWeight: '800', fontSize: '1rem', marginBottom: '1rem', color: 'hsl(var(--secondary))' }}>Tour Highlights</h4>
-                     <ul style={{ listStyle: 'none', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-                        <li style={{ fontSize: '0.9rem', color: 'hsl(var(--foreground) / 0.7)', display: 'flex', gap: '0.5rem' }}>
-                          <ShieldCheck size={16} className="text-primary" /> Verified Tour
-                        </li>
-                        <li style={{ fontSize: '0.9rem', color: 'hsl(var(--foreground) / 0.7)', display: 'flex', gap: '0.5rem' }}>
-                          <ShieldCheck size={16} className="text-primary" /> Luxury Transport
-                        </li>
-                        <li style={{ fontSize: '0.9rem', color: 'hsl(var(--foreground) / 0.7)', display: 'flex', gap: '0.5rem' }}>
-                          <ShieldCheck size={16} className="text-primary" /> Handpicked Hotels
-                        </li>
-                     </ul>
+                     <span style={{ fontSize: '0.8rem', fontWeight: '800', color: 'hsl(var(--foreground) / 0.5)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                       {t.uiPriceFrom || 'Starting From'}
+                     </span>
+                     <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.25rem', margin: '0.5rem 0 1rem 0' }}>
+                       <span style={{ fontSize: '2rem', fontWeight: '900', color: 'hsl(var(--secondary))' }}>
+                         {formatMoney(tour.price, currency, { usdToLkrRate })}
+                       </span>
+                       <span style={{ color: 'hsl(var(--foreground) / 0.5)', fontWeight: '700', fontSize: '0.85rem' }}>
+                         /{t.uiPerPerson || 'person'}
+                       </span>
+                     </div>
+                     <button
+                       onClick={() => {
+                         onClose();
+                         navigate('/booking', { state: { tour } });
+                       }}
+                       className="btn btn-primary"
+                       style={{ width: '100%', padding: '0.9rem', borderRadius: '1rem', fontSize: '0.95rem' }}
+                     >
+                       {t.uiConfirmBooking || 'Confirm Booking'}
+                     </button>
                    </div>
+
+                   {/* This area can be used for extra info or widgets */}
+                   {displayHighlights.length > 0 && (
+                     <div style={{
+                       padding: '2rem',
+                       borderRadius: '1.5rem',
+                       backgroundColor: 'hsl(var(--primary) / 0.03)',
+                       border: '1px solid hsl(var(--primary) / 0.08)',
+                     }}>
+                       <h4 style={{ fontWeight: '800', fontSize: '1rem', marginBottom: '1rem', color: 'hsl(var(--secondary))' }}>
+                         {t.uiTourHighlights || 'Tour Highlights'}
+                       </h4>
+                       <ul style={{ listStyle: 'none', display: 'flex', flexDirection: 'column', gap: '0.75rem', padding: 0, margin: 0 }}>
+                         {displayHighlights.map((item, idx) => (
+                           <li
+                             key={`${item}-${idx}`}
+                             style={{ fontSize: '0.9rem', color: 'hsl(var(--foreground) / 0.7)', display: 'flex', gap: '0.5rem', alignItems: 'flex-start' }}
+                           >
+                             <ShieldCheck size={16} className="text-primary" style={{ marginTop: '2px', flexShrink: 0 }} />
+                             <span>{item}</span>
+                           </li>
+                         ))}
+                       </ul>
+                     </div>
+                   )}
                 </div>
               )}
             </div>
@@ -543,8 +652,12 @@ export default function TourModal({ isOpen, onClose, tour, lang = 'en' }) {
                 zIndex: 100
               }}>
                 <div>
-                  <span style={{ fontSize: '0.75rem', fontWeight: '800', color: 'hsl(var(--foreground) / 0.5)', textTransform: 'uppercase' }}>From</span>
-                  <div style={{ fontSize: '1.5rem', fontWeight: '900', color: 'hsl(var(--secondary))' }}>${tour.price}</div>
+                  <span style={{ fontSize: '0.75rem', fontWeight: '800', color: 'hsl(var(--foreground) / 0.5)', textTransform: 'uppercase' }}>
+                    {t.uiFrom || 'From'}
+                  </span>
+                  <div style={{ fontSize: '1.5rem', fontWeight: '900', color: 'hsl(var(--secondary))' }}>
+                    {formatMoney(tour.price, currency, { usdToLkrRate })}
+                  </div>
                 </div>
                 <button
                    onClick={() => {
@@ -554,7 +667,7 @@ export default function TourModal({ isOpen, onClose, tour, lang = 'en' }) {
                   className="btn btn-primary"
                   style={{ padding: '0.8rem 2rem' }}
                 >
-                  Book Now
+                  {t.uiBookNow || 'Book Now'}
                 </button>
               </div>
             )}
@@ -566,4 +679,8 @@ export default function TourModal({ isOpen, onClose, tour, lang = 'en' }) {
       </motion.div>
     </AnimatePresence>
   );
+
+  // Render at <body> level to avoid stacking-context / z-index issues.
+  if (typeof document === 'undefined') return modal;
+  return createPortal(modal, document.body);
 }

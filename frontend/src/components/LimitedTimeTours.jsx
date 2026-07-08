@@ -1,8 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Timer, Zap, ArrowRight, ExternalLink } from 'lucide-react';
-import { TRANSLATIONS } from '../data/translations';
 import API_URL, { mediaUrl } from '../config';
+import { useSite } from '../context/SiteContext';
+import { getLocalizationBucket } from '../utils/localization';
+import { getPackageLocalizationFallback } from '../utils/packageLocalizationFallback';
+import { formatMoney } from '../utils/money';
 
 const CountdownTimer = ({ expiryDate, labels }) => {
   const calculateTimeLeft = () => {
@@ -64,15 +67,15 @@ const CountdownTimer = ({ expiryDate, labels }) => {
   );
 };
 
-export default function LimitedTimeTours({ onOpenTour, currentLanguage = 'en' }) {
-  const t = TRANSLATIONS[currentLanguage] || TRANSLATIONS.en;
+export default function LimitedTimeTours({ onOpenTour }) {
+  const { language, t, currency, usdToLkrRate } = useSite();
   const [dynamicPackages, setDynamicPackages] = useState([]);
 
   useEffect(() => {
     let isMounted = true;
     (async () => {
       try {
-        const res = await fetch(`${API_URL}/packages`);
+        const res = await fetch(`${API_URL}/packages?lang=${encodeURIComponent(language)}`);
         if (!res.ok) throw new Error('Failed to fetch packages');
         const data = await res.json();
         if (isMounted && Array.isArray(data)) setDynamicPackages(data);
@@ -81,7 +84,7 @@ export default function LimitedTimeTours({ onOpenTour, currentLanguage = 'en' })
       }
     })();
     return () => { isMounted = false; };
-  }, []);
+  }, [language]);
 
   const flashSales = dynamicPackages.filter(p => p.isLimitedTime);
 
@@ -93,7 +96,13 @@ export default function LimitedTimeTours({ onOpenTour, currentLanguage = 'en' })
   };
 
   return (
-    <section style={{ padding: '100px 5% 60px', maxWidth: '1440px', margin: '0 auto' }}>
+    <section style={{
+      padding: 'clamp(3rem, 10vw, 100px) max(1.25rem, 5%) 60px',
+      paddingLeft: 'max(1.25rem, 5%, env(safe-area-inset-left, 0px))',
+      paddingRight: 'max(1.25rem, 5%, env(safe-area-inset-right, 0px))',
+      maxWidth: '1440px',
+      margin: '0 auto'
+    }}>
       <div style={{ 
         display: 'flex', 
         justifyContent: 'space-between', 
@@ -145,7 +154,10 @@ export default function LimitedTimeTours({ onOpenTour, currentLanguage = 'en' })
       <div className="grid-layout">
         {flashSales.map((pkg, idx) => {
           const originalPrice = Math.round(pkg.price / (1 - (pkg.discountPercentage / 100)));
-          const localized = pkg.localizations?.[currentLanguage] || {};
+          const localized = {
+            ...getPackageLocalizationFallback(pkg, language),
+            ...getLocalizationBucket(pkg, language),
+          };
           const displayTitle = localized.title || pkg.title;
           const displayDescription = localized.description || pkg.description;
           
@@ -226,6 +238,8 @@ export default function LimitedTimeTours({ onOpenTour, currentLanguage = 'en' })
                   display: 'flex', 
                   justifyContent: 'space-between', 
                   alignItems: 'center',
+                  flexWrap: 'wrap',
+                  gap: '1rem',
                   paddingTop: '1.5rem',
                   borderTop: '1px solid hsl(var(--glass-border))'
                 }}>
@@ -235,19 +249,23 @@ export default function LimitedTimeTours({ onOpenTour, currentLanguage = 'en' })
                       color: 'hsl(var(--foreground) / 0.4)', 
                       textDecoration: 'line-through',
                       fontWeight: '600'
-                    }}>${originalPrice}</span>
+                    }}>
+                      {formatMoney(originalPrice, currency, { usdToLkrRate })}
+                    </span>
                     <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.25rem' }}>
                       <span style={{ fontSize: '2rem', fontWeight: '900', color: 'hsl(var(--secondary))' }}>
-                        ${pkg.price}
+                        {formatMoney(pkg.price, currency, { usdToLkrRate })}
                       </span>
-                      <span style={{ fontSize: '0.8rem', color: 'hsl(var(--foreground) / 0.5)', fontWeight: '600' }}>/ {t.uiConfirmBooking.includes('Confirm') ? 'person' : 'person'}</span>
+                      <span style={{ fontSize: '0.8rem', color: 'hsl(var(--foreground) / 0.5)', fontWeight: '600' }}>
+                        / {t.uiPerPerson || 'person'}
+                      </span>
                     </div>
                   </div>
 
                   <motion.button
                     whileHover={{ scale: 1.05, backgroundColor: 'hsl(var(--secondary))', color: 'white' }}
                     whileTap={{ scale: 0.95 }}
-                    onClick={() => onOpenTour(pkg)}
+                    onClick={() => onOpenTour?.(pkg)}
                     style={{
                       background: 'hsl(var(--primary))',
                       color: 'white',

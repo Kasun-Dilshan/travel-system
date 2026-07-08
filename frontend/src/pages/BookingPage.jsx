@@ -4,11 +4,14 @@ import { motion } from 'framer-motion';
 import { ChevronLeft, Send, Calendar, Users, Phone, Mail, User, Info, CheckCircle2 } from 'lucide-react';
 import SEO from '../components/SEO';
 import API_URL, { mediaUrl } from '../config';
+import { useSite } from '../context/SiteContext';
+import { formatMoney } from '../utils/money';
 
 export default function BookingPage() {
   const location = useLocation();
   const navigate = useNavigate();
   const { tour } = location.state || {};
+  const { currency, usdToLkrRate } = useSite();
 
   const [formData, setFormData] = useState({
     clientName: '',
@@ -57,6 +60,7 @@ export default function BookingPage() {
           guests: Number(formData.guests),
           tourId,
           tourTitle: tour.title,
+          // Persist USD price to backend (prices are stored in USD).
           totalPrice: tour.price * Number(formData.guests)
         })
       });
@@ -106,7 +110,14 @@ export default function BookingPage() {
   }
 
   return (
-    <div style={{ padding: '8rem 2rem', backgroundColor: 'hsl(var(--primary) / 0.015)', minHeight: '100vh' }}>
+    <div style={{
+      padding: 'max(6rem, calc(5rem + env(safe-area-inset-top, 0px))) max(1.25rem, 2rem) 3rem',
+      paddingLeft: 'max(1.25rem, 2rem, env(safe-area-inset-left, 0px))',
+      paddingRight: 'max(1.25rem, 2rem, env(safe-area-inset-right, 0px))',
+      paddingBottom: 'max(3rem, env(safe-area-inset-bottom, 0px))',
+      backgroundColor: 'hsl(var(--primary) / 0.015)',
+      minHeight: '100dvh'
+    }}>
       <SEO 
         title={`Book ${tour.title} | Serendib Travel`}
         description={`Secure your spot for the ${tour.title}. Premium Sri Lankan travel experience.`}
@@ -194,7 +205,8 @@ export default function BookingPage() {
                 fontSize: '0.8rem',
                 backdropFilter: 'blur(4px)'
               }}>
-                ${tour.price} <span style={{ opacity: 0.7 }}>/ person</span>
+                {formatMoney(tour.price, currency, { usdToLkrRate })}{' '}
+                <span style={{ opacity: 0.7 }}>/ person</span>
               </div>
             </div>
 
@@ -203,7 +215,7 @@ export default function BookingPage() {
             <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', fontSize: '0.95rem' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', opacity: 0.6 }}>
                 <span>Subtotal</span>
-                <span>${tour.price} &times; {formData.guests}</span>
+                  <span>{formatMoney(tour.price, currency, { usdToLkrRate })} &times; {formData.guests}</span>
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between', opacity: 0.6 }}>
                 <span>Service Fee</span>
@@ -220,7 +232,7 @@ export default function BookingPage() {
               }}>
                 <span style={{ fontWeight: '700', color: 'hsl(var(--secondary))' }}>Total Amount</span>
                 <span style={{ fontSize: '1.75rem', fontWeight: '900', color: 'hsl(var(--primary))' }}>
-                  ${tour.price * formData.guests}
+                  {formatMoney(tour.price * formData.guests, currency, { usdToLkrRate })}
                 </span>
               </div>
             </div>

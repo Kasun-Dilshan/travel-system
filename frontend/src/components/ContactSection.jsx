@@ -1,15 +1,15 @@
 import React from 'react';
 import { motion } from 'framer-motion';
 import { MapPin, Phone, Mail, Clock, ArrowRight } from 'lucide-react';
-import { TRANSLATIONS } from '../data/translations';
+import { useSite } from '../context/SiteContext';
 
 const CONTACT_DATA = {
   inbound: {
     titleKey: 'contactTitle',
     subtitleKey: 'contactSubtitle',
-    address: 'No 45, Galle Road, Colombo 03, Sri Lanka',
-    phone: '+94 11 234 5678',
-    email: 'inbound@serendibtravel.com',
+    address: 'No.87, Pannipitiya Road, Battramulla',
+    phone: '0744110416',
+    email: 'inbound_manager@serendibdestinations.com',
     accent: 'hsl(var(--primary))'
   },
   outbound: {
@@ -17,21 +17,21 @@ const CONTACT_DATA = {
     subtitleKey: 'contactSubtitle',
     address: 'Serendib Group of Companies',
     phone: '+94 11 234 5678',
-    email: 'outbound@serendibtravel.com',
+    email: 'outbound@serendibdestinations.com',
     accent: 'hsl(var(--accent))'
   }
 };
 
-export default function ContactSection({ type = 'inbound', lang = 'en' }) {
+export default function ContactSection({ type = 'inbound' }) {
   const source = CONTACT_DATA[type] || CONTACT_DATA.inbound;
-  const t = TRANSLATIONS[lang] || TRANSLATIONS.en;
+  const { t } = useSite();
 
   return (
     <section style={{ marginTop: '6rem', marginBottom: '4rem' }}>
       <div
         style={{
-          padding: '4rem',
-          borderRadius: '2.5rem',
+          padding: 'clamp(1.75rem, 5vw, 4rem)',
+          borderRadius: 'clamp(1.25rem, 4vw, 2.5rem)',
           background: 'linear-gradient(135deg, hsl(var(--secondary) / 0.03) 0%, hsl(var(--primary) / 0.05) 100%)',
           border: '1px solid hsl(var(--primary) / 0.1)',
           position: 'relative',
@@ -52,11 +52,11 @@ export default function ContactSection({ type = 'inbound', lang = 'en' }) {
           zIndex: 0
         }} />
 
-        <div style={{ position: 'relative', zIndex: 1, display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '4rem', alignItems: 'center' }}>
+        <div style={{ position: 'relative', zIndex: 1, display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 280px), 1fr))', gap: 'clamp(2rem, 5vw, 4rem)', alignItems: 'center' }}>
           {/* Text Content */}
           <div>
             <p className="section-label" style={{ color: source.accent }}>{t.contactLabel}</p>
-            <h2 style={{ fontSize: '2.5rem', fontWeight: '900', marginBottom: '1rem' }}>{t[source.titleKey]}</h2>
+            <h2 style={{ fontSize: 'clamp(1.75rem, 5vw, 2.5rem)', fontWeight: '900', marginBottom: '1rem' }}>{t[source.titleKey]}</h2>
             <p style={{ fontSize: '1.1rem', opacity: 0.7, marginBottom: '2.5rem', maxWidth: '450px' }}>
               {t[source.subtitleKey]} {t.contactTeam}
             </p>

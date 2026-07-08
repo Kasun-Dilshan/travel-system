@@ -73,6 +73,12 @@ $publicPath = '/uploads/packages/' . $basename;
 
 // Return an absolute URL so the frontend can display the image even when hosted
 // on a different origin than the PHP backend.
+$appUrl = getenv('APP_URL');
+if (is_string($appUrl) && trim($appUrl) !== '') {
+    $absoluteUrl = rtrim(trim($appUrl), '/') . $publicPath;
+    sendResponse(['url' => $absoluteUrl, 'path' => $publicPath], 201);
+}
+
 $forwardedProto = $_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '';
 $scheme = 'http';
 if (is_string($forwardedProto) && $forwardedProto !== '') {

@@ -3,10 +3,10 @@ export const PACKAGES = [
     id: "1",
     title: "Sigiriya Rock Fortress", 
     price: 200, 
-    image: "/src/assets/sigiriya.png",
+    image: "/src/assets/sigiriya.webp",
     images: [
-      "/src/assets/sigiriya.png",
-      "/src/assets/sigiriya-2.png"
+      "/src/assets/sigiriya.webp",
+      "/src/assets/sigiriya-2.webp"
     ],
     duration: "Full Day",
     description: "Scale the majestic 'Lion Rock', a UNESCO World Heritage site featuring ancient frescoes and symmetrical water gardens.",
@@ -24,10 +24,10 @@ export const PACKAGES = [
     id: "2",
     title: "Ella Adventure", 
     price: 150, 
-    image: "/src/assets/ella.png",
+    image: "/src/assets/ella.webp",
     images: [
-      "/src/assets/ella.png",
-      "/src/assets/ella-2.png"
+      "/src/assets/ella.webp",
+      "/src/assets/ella-2.webp"
     ],
     duration: "Full Day",
     description: "Trek through misty mountains to find the iconic Nine Arch Bridge and Little Adam's Peak.",
@@ -45,10 +45,10 @@ export const PACKAGES = [
     id: "3",
     title: "Galle Heritage Trip", 
     price: 120, 
-    image: "/src/assets/galle.png",
+    image: "/src/assets/galle.webp",
     images: [
-      "/src/assets/galle.png",
-      "/src/assets/galle-2.png"
+      "/src/assets/galle.webp",
+      "/src/assets/galle-2.webp"
     ],
     duration: "Full Day",
     description: "A walk through time in the Dutch Fort of Galle followed by the golden beaches of Unawatuna.",
@@ -66,8 +66,8 @@ export const PACKAGES = [
     id: "4",
     title: "Kandy Cultural Tour", 
     price: 80, 
-    image: "/src/assets/kandy.png",
-    images: ["/src/assets/kandy.png", "/src/assets/kandy-2.png", "/src/assets/kandy-3.png"],
+    image: "/src/assets/kandy.webp",
+    images: ["/src/assets/kandy.webp", "/src/assets/kandy-2.webp", "/src/assets/kandy-3.webp"],
     duration: "Full Day",
     description: "Visit the sacred Temple of the Tooth and witness a vibrant traditional dance performance.",
     itinerary: [
@@ -84,8 +84,8 @@ export const PACKAGES = [
     id: "5",
     title: "Paris Romance", 
     price: 1200, 
-    image: "/src/assets/paris.png",
-    images: ["/src/assets/paris.png"],
+    image: "/src/assets/paris.webp",
+    images: ["/src/assets/paris.webp"],
     duration: "5 Days / 4 Nights",
     description: "Experience the City of Lights with private tours of the Eiffel Tower and Louvre Museum.",
     itinerary: [
@@ -127,8 +127,8 @@ export const PACKAGES = [
     id: "6",
     title: "Tokyo Neon Nights", 
     price: 1500, 
-    image: "/src/assets/tokyo.png",
-    images: ["/src/assets/tokyo.png"],
+    image: "/src/assets/tokyo.webp",
+    images: ["/src/assets/tokyo.webp"],
     duration: "6 Days / 5 Nights",
     description: "A perfect blend of ancient tradition and futuristic technology in the heart of Japan.",
     itinerary: [
@@ -164,8 +164,8 @@ export const PACKAGES = [
     id: "7",
     title: "Dubai Luxury Desert", 
     price: 900, 
-    image: "/src/assets/dubai.png",
-    images: ["/src/assets/dubai.png"],
+    image: "/src/assets/dubai.webp",
+    images: ["/src/assets/dubai.webp"],
     duration: "4 Days / 3 Nights",
     description: "Thrill-seeking in the desert and luxury shopping in the world's grandest malls.",
     itinerary: [
@@ -181,8 +181,8 @@ export const PACKAGES = [
     id: "8",
     title: "Sydney Harbor Escape", 
     price: 1100, 
-    image: "/src/assets/sydney.png",
-    images: ["/src/assets/sydney.png"],
+    image: "/src/assets/sydney.webp",
+    images: ["/src/assets/sydney.webp"],
     duration: "5 Days / 4 Nights",
     description: "Sun, surf, and icons. Explore the Opera House and the famous Bondi Beach.",
     itinerary: [

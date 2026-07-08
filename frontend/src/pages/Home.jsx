@@ -4,13 +4,14 @@ import SEO from '../components/SEO';
 import HeroCarousel from '../components/HeroCarousel';
 import Hero from '../components/Hero';
 import AboutUs from '../components/AboutUs';
-import ReviewCarousel from '../components/ReviewCarousel';
 import LimitedTimeTours from '../components/LimitedTimeTours';
 import TourModal from '../components/TourModal';
+import { useSite } from '../context/SiteContext';
 
-export default function Home({ currentLanguage = 'en' }) {
+export default function Home() {
   const [selectedTour, setSelectedTour] = useState(null);
   const [tourOpen, setTourOpen] = useState(false);
+  const { t } = useSite();
 
   const openTour = (tour) => {
     setSelectedTour(tour);
@@ -33,51 +34,55 @@ export default function Home({ currentLanguage = 'en' }) {
         <HeroCarousel />
       </section>
 
-      <LimitedTimeTours onOpenTour={openTour} currentLanguage={currentLanguage} />
+      <LimitedTimeTours onOpenTour={openTour} />
       
-      <section style={{ padding: '80px 5% 40px', maxWidth: '1440px', margin: '0 auto' }}>
+      <section style={{
+        padding: 'clamp(3rem, 8vw, 80px) 0 40px',
+        width: '100%'
+      }}>
         <motion.div 
           initial={{ opacity: 0, y: 20 }}
           whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true }}
-          style={{ textAlign: 'center', marginBottom: '4rem' }}
+          style={{
+            textAlign: 'center',
+            marginBottom: '4rem',
+            maxWidth: '1440px',
+            marginInline: 'auto',
+            paddingInline: 'max(1.25rem, 5%)',
+            paddingLeft: 'max(1.25rem, 5%, env(safe-area-inset-left, 0px))',
+            paddingRight: 'max(1.25rem, 5%, env(safe-area-inset-right, 0px))'
+          }}
         >
           <h2 className="serif" style={{ fontSize: 'clamp(2.5rem, 5vw, 4rem)', fontWeight: 800, color: 'hsl(var(--secondary))', marginBottom: '1.5rem' }}>
-            Our Signature Collections
+            {t.homeCollectionsTitle || 'Our Signature Collections'}
           </h2>
           <div style={{ width: '80px', height: '4px', background: 'hsl(var(--primary))', margin: '0 auto 1.5rem', borderRadius: '2px' }} />
           <p style={{ fontSize: '1.2rem', color: 'hsl(var(--foreground))', opacity: 0.8, maxWidth: '600px', margin: '0 auto' }}>
-            Choose your path: Serene Island Escapes or Global Wonders.
+            {t.homeCollectionsSubtitle || 'Choose your path: Serene Island Escapes or Global Wonders.'}
           </p>
         </motion.div>
-        <Hero />
+        <div style={{ width: '100%', overflow: 'hidden' }}>
+          <Hero />
+        </div>
       </section>
 
       <section style={{ padding: '40px 0', background: 'hsl(var(--primary) / 0.02)' }}>
-        <div style={{ maxWidth: '1440px', margin: '0 auto', padding: '0 5%' }}>
+        <div style={{
+          maxWidth: '1440px',
+          margin: '0 auto',
+          padding: '0 max(1.25rem, 5%)',
+          paddingLeft: 'max(1.25rem, 5%, env(safe-area-inset-left, 0px))',
+          paddingRight: 'max(1.25rem, 5%, env(safe-area-inset-right, 0px))'
+        }}>
           <AboutUs />
         </div>
       </section>
       
-      <section style={{ padding: '80px 0 100px' }}>
-        <div style={{ maxWidth: '1440px', margin: '0 auto', padding: '0 5%' }}>
-          <div style={{ textAlign: 'center', marginBottom: '4rem' }}>
-            <h2 className="serif" style={{ fontSize: 'clamp(2rem, 4vw, 3.5rem)', fontWeight: 800 }}>
-              Wall of Love
-            </h2>
-            <p style={{ color: 'hsl(var(--primary))', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '2px', fontSize: '0.9rem', marginTop: '0.5rem' }}>
-              Testimonials from our travelers
-            </p>
-          </div>
-          <ReviewCarousel />
-        </div>
-      </section>
-
       <TourModal 
         isOpen={tourOpen} 
         onClose={closeTour} 
         tour={selectedTour} 
-        lang={currentLanguage} 
       />
     </main>
   );

@@ -1,13 +1,20 @@
 import { motion } from 'framer-motion';
 import { MapPin, Star, ArrowRight } from 'lucide-react';
-import { TRANSLATIONS } from '../data/translations';
 import { mediaUrl } from '../config';
+import { useSite } from '../context/SiteContext';
+import { getLocalizationBucket } from '../utils/localization';
+import { getPackageLocalizationFallback } from '../utils/packageLocalizationFallback';
+import { formatMoney } from '../utils/money';
 
-export default function PackageCard({ pkg, image, onViewDetails, lang = 'en' }) {
-  const t = TRANSLATIONS[lang] || TRANSLATIONS.en;
+export default function PackageCard({ pkg, image, onViewDetails, lang }) {
+  const { language, t, currency, usdToLkrRate } = useSite();
+  const activeLang = lang || language;
   
   // Localized Content
-  const localized = pkg.localizations?.[lang] || {};
+  const localized = {
+    ...getPackageLocalizationFallback(pkg, activeLang),
+    ...getLocalizationBucket(pkg, activeLang),
+  };
   const displayTitle = localized.title || pkg.title;
   const displayDescription = localized.description || pkg.description;
 
@@ -27,7 +34,22 @@ export default function PackageCard({ pkg, image, onViewDetails, lang = 'en' }) 
         position: 'relative',
         cursor: onViewDetails ? 'pointer' : 'default'
       }}
-      onClick={onViewDetails}
+      role={onViewDetails ? 'button' : undefined}
+      tabIndex={onViewDetails ? 0 : undefined}
+      onClick={(e) => {
+        if (!onViewDetails) return;
+        e?.preventDefault?.();
+        e?.stopPropagation?.();
+        onViewDetails(pkg);
+      }}
+      onKeyDown={(e) => {
+        if (!onViewDetails) return;
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          e.stopPropagation();
+          onViewDetails(pkg);
+        }
+      }}
     >
       {/* Image Container */}
       <div style={{ position: 'relative', height: '240px', overflow: 'hidden' }}>
@@ -68,7 +90,7 @@ export default function PackageCard({ pkg, image, onViewDetails, lang = 'en' }) 
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', color: 'hsl(var(--primary))', marginBottom: '0.5rem' }}>
           <MapPin size={16} />
           <span style={{ fontSize: '0.8rem', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.1em' }}>
-            {lang === 'de' ? 'JETZT VERFÜGBAR' : lang === 'fr' ? 'DISPONIBLE MAINTENANT' : lang === 'zh' ? '现在可用' : 'Available Now'}
+            {t.uiAvailableNow || 'Available Now'}
           </span>
         </div>
 
@@ -94,9 +116,15 @@ export default function PackageCard({ pkg, image, onViewDetails, lang = 'en' }) 
             </span>
             <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.1rem' }}>
               <span style={{ fontSize: '1.6rem', fontWeight: '900', color: 'hsl(var(--secondary))' }}>
-                ${pkg.price}
+                {Number(pkg.price) > 0
+                  ? formatMoney(pkg.price, currency, { usdToLkrRate })
+                  : (t.uiContactForPrice || 'Contact us')}
               </span>
-              <span style={{ fontSize: '0.85rem', color: 'hsl(var(--foreground) / 0.7)', fontWeight: '700' }}>/person</span>
+              {Number(pkg.price) > 0 && (
+              <span style={{ fontSize: '0.85rem', color: 'hsl(var(--foreground) / 0.7)', fontWeight: '700' }}>
+                /{t.uiPerPerson || 'person'}
+              </span>
+              )}
             </div>
           </div>
 
@@ -117,8 +145,10 @@ export default function PackageCard({ pkg, image, onViewDetails, lang = 'en' }) 
             }}
             onClick={(e) => {
               e.stopPropagation();
-              onViewDetails?.();
+              e.preventDefault();
+              onViewDetails?.(pkg);
             }}
+            type="button"
           >
             <ArrowRight size={20} />
           </motion.button>

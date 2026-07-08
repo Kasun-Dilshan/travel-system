@@ -2,10 +2,11 @@ import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import PackageCard from '../components/PackageCard';
 import TourModal from '../components/TourModal';
+import DestinationModal from '../components/DestinationModal';
+import { OUTBOUND_DESTINATIONS } from '../data/outbound-destinations';
 import ContactSection from '../components/ContactSection';
-import LanguagePicker from '../components/LanguagePicker';
-import { TRANSLATIONS } from '../data/translations';
 import API_URL from '../config';
+import { useSite } from '../context/SiteContext';
 
 const fadeInUp = {
   hidden: { opacity: 0, y: 40 },
@@ -32,21 +33,18 @@ import SubAboutUs from '../components/SubAboutUs';
 import SectionHeader from '../components/SectionHeader';
 import DestinationsGrid from '../components/DestinationsGrid';
 import ServicesGrid from '../components/ServicesGrid';
-import BlogPreview from '../components/BlogPreview';
-import ReviewCarousel from '../components/ReviewCarousel';
-import parisImg from '../assets/paris.png';
-import dubaiImg from '../assets/dubai.png';
-import tokyoImg from '../assets/tokyo.png';
-import londonImg from '../assets/london.png';
-import singaporeImg from '../assets/singapore.png';
+import parisImg from '../assets/paris.webp';
 
 import SEO from '../components/SEO';
 
-export default function Outbound({ selectedLanguage = 'en', setSelectedLanguage }) {
+export default function Outbound() {
   const [selectedTour, setSelectedTour] = useState(null);
   const [tourOpen, setTourOpen] = useState(false);
+  const [selectedDestination, setSelectedDestination] = useState(null);
+  const [destOpen, setDestOpen] = useState(false);
   const [dynamicPackages, setDynamicPackages] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
+  const { language, t } = useSite();
 
   const openTour = (tour) => {
     setSelectedTour(tour);
@@ -58,17 +56,37 @@ export default function Outbound({ selectedLanguage = 'en', setSelectedLanguage 
     setSelectedTour(null);
   };
 
+  const openDestination = (dest) => {
+    setSelectedDestination(dest);
+    setDestOpen(true);
+  };
+
+  const closeDestination = () => {
+    setDestOpen(false);
+    setSelectedDestination(null);
+  };
+
   useEffect(() => {
     window.scrollTo(0, 0);
     fetchPackages();
-  }, []);
+  }, [language]);
 
   const fetchPackages = async () => {
     try {
-      const res = await fetch(`${API_URL}/packages`);
+      const res = await fetch(`${API_URL}/packages?lang=${encodeURIComponent(language)}`);
       if (!res.ok) throw new Error('Failed to fetch');
       const data = await res.json();
-      setDynamicPackages(data.filter(p => p.category === 'Outbound'));
+      const outbound = data.filter(p => p.category === 'Outbound');
+      setDynamicPackages(outbound);
+
+      // If a tour is already selected, re-bind it to the freshly fetched
+      // (language-specific) object so the modal/details update correctly.
+      setSelectedTour((prev) => {
+        if (!prev) return prev;
+        const prevId = prev._id ?? prev.id;
+        if (!prevId) return prev;
+        return outbound.find((p) => (p._id ?? p.id) === prevId) || prev;
+      });
     } catch (err) {
       console.error("Error fetching packages:", err);
     } finally {
@@ -80,15 +98,7 @@ export default function Outbound({ selectedLanguage = 'en', setSelectedLanguage 
   const roundTours = allPackages.filter(p => p.type === 'Round');
   const dayTours = allPackages.filter(p => !p.type || p.type === 'Day');
 
-  const t = TRANSLATIONS[selectedLanguage] || TRANSLATIONS.en;
-
-  const destinations = [
-    { name: "Paris", description: "The city of light and romance.", image: parisImg },
-    { name: "Dubai", description: "Futuristic skylines and desert luxury.", image: dubaiImg },
-    { name: "Tokyo", description: "Neon streets and ancient culture.", image: tokyoImg },
-    { name: "London", description: "Historic landmarks and modern energy.", image: londonImg },
-    { name: "Singapore", description: "A garden city with vibrant beats.", image: singaporeImg }
-  ];
+  const destinations = OUTBOUND_DESTINATIONS;
 
   const serviceLabels = {
     transport: t.serviceTransport,
@@ -101,8 +111,8 @@ export default function Outbound({ selectedLanguage = 'en', setSelectedLanguage 
 
   return (
     <main 
-      dir={selectedLanguage === 'ar' ? 'rtl' : 'ltr'}
-      style={{ minHeight: '100vh', padding: '0 0 100px 0', textAlign: selectedLanguage === 'ar' ? 'right' : 'left' }}
+      dir={language === 'ar' ? 'rtl' : 'ltr'}
+      style={{ minHeight: '100vh', padding: '0 0 100px 0', textAlign: language === 'ar' ? 'right' : 'left' }}
     >
       <SEO 
         title={`${t.outboundTitle} | Serendib Global Wonders`}
@@ -128,11 +138,11 @@ export default function Outbound({ selectedLanguage = 'en', setSelectedLanguage 
           {/* Round Tours Section */}
           {roundTours.length > 0 && (
             <section style={{ padding: '60px 0' }}>
-              <SectionHeader title={t.roundToursTitle} label="WORLD TOURS" accentColor="hsl(var(--accent))" />
+              <SectionHeader title={t.roundToursTitle} label={t.sectionLabelWorldTours || 'WORLD TOURS'} accentColor="hsl(var(--accent))" />
               <motion.div variants={staggerContainer} initial="hidden" animate="visible" className="grid-layout">
                 {roundTours.map(p => (
                   <motion.div variants={fadeInUp} key={p._id || p.id}>
-                    <PackageCard pkg={p} image={p.image} onViewDetails={() => openTour(p)} lang={selectedLanguage} />
+                    <PackageCard pkg={p} image={p.image} onViewDetails={openTour} />
                   </motion.div>
                 ))}
               </motion.div>
@@ -142,11 +152,11 @@ export default function Outbound({ selectedLanguage = 'en', setSelectedLanguage 
           {/* Day Tours Section */}
           {dayTours.length > 0 && (
             <section style={{ padding: '60px 0' }}>
-              <SectionHeader title={t.dayToursTitle} label="CITY BREAKS" accentColor="hsl(var(--accent))" />
+              <SectionHeader title={t.dayToursTitle} label={t.sectionLabelCityBreaks || 'CITY BREAKS'} accentColor="hsl(var(--accent))" />
               <motion.div variants={staggerContainer} initial="hidden" animate="visible" className="grid-layout">
                 {dayTours.map(p => (
                   <motion.div variants={fadeInUp} key={p._id || p.id}>
-                    <PackageCard pkg={p} image={p.image} onViewDetails={() => openTour(p)} lang={selectedLanguage} />
+                    <PackageCard pkg={p} image={p.image} onViewDetails={openTour} />
                   </motion.div>
                 ))}
               </motion.div>
@@ -155,28 +165,30 @@ export default function Outbound({ selectedLanguage = 'en', setSelectedLanguage 
         </div>
 
         <div id="destinations-section">
-          <DestinationsGrid title={t.destinationsTitle} destinations={destinations} accentColor="hsl(var(--accent))" />
+          <DestinationsGrid
+            title={t.destinationsTitle}
+            destinations={destinations}
+            onSelectDestination={openDestination}
+            accentColor="hsl(var(--accent))"
+          />
         </div>
         
         <div id="services-section">
           <ServicesGrid title={t.servicesTitle} serviceLabels={serviceLabels} accentColor="hsl(var(--accent))" />
         </div>
         
-        <div id="guides-section">
-          <BlogPreview title={t.guideTitle} accentColor="hsl(var(--accent))" />
-        </div>
-
-        <section id="reviews-section" style={{ padding: '80px 0' }}>
-          <SectionHeader title="Global Feedback" center={true} accentColor="hsl(var(--accent))" />
-          <ReviewCarousel />
-        </section>
-        
         <div id="contact-section">
-          <ContactSection type="outbound" lang={selectedLanguage} />
+          <ContactSection type="outbound" />
         </div>
       </div>
       
-      <TourModal isOpen={tourOpen} onClose={closeTour} tour={selectedTour} lang={selectedLanguage} />
+      <TourModal isOpen={tourOpen} onClose={closeTour} tour={selectedTour} />
+      <DestinationModal
+        isOpen={destOpen}
+        onClose={closeDestination}
+        destination={selectedDestination}
+        headerBadge={t.outboundLabel}
+      />
     </main>
   );
 }

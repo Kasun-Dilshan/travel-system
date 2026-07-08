@@ -23,6 +23,7 @@ if ($uri !== '/' && file_exists($requestedPath) && !is_dir($requestedPath)) {
 // - /api/blogs, /api/blogs/{id}, /api/blogs/slug/{slug}
 // - /api/settings
 // - /api/upload
+// - /api/reviews, /api/reviews/{id}
 
 if ($uri === '/api/auth/login') {
   require __DIR__ . '/api/auth.php';
@@ -72,6 +73,34 @@ if ($uri === '/api/settings') {
 if ($uri === '/api/upload') {
   require __DIR__ . '/api/upload.php';
   exit;
+}
+
+if ($uri === '/api/uploads' || $uri === '/api/uploads/') {
+  require __DIR__ . '/api/uploads.php';
+  exit;
+}
+
+if ($uri === '/api/reviews') {
+  require __DIR__ . '/api/reviews.php';
+  exit;
+}
+if (preg_match('#^/api/reviews/([0-9]+)$#', $uri, $m)) {
+  $_GET['id'] = $m[1];
+  require __DIR__ . '/api/reviews.php';
+  exit;
+}
+
+// SPA fallback for built frontend (mirrors .htaccess — fixes refresh 404 on php -S).
+$indexHtml = __DIR__ . '/index.html';
+if (file_exists($indexHtml)) {
+  $isApi = (bool) preg_match('#^/api(/|$)#', $uri);
+  $isUpload = (bool) preg_match('#^/uploads/#', $uri);
+  $isStatic = (bool) preg_match('#\.(css|js|mjs|map|png|jpe?g|gif|webp|svg|ico|woff2?|ttf|eot|php|json|xml|txt)$#i', $uri);
+  if (!$isApi && !$isUpload && !$isStatic) {
+    header('Content-Type: text/html; charset=UTF-8');
+    readfile($indexHtml);
+    exit;
+  }
 }
 
 http_response_code(404);

@@ -3,6 +3,8 @@ import { motion } from 'framer-motion';
 import { MapPin } from 'lucide-react';
 import SectionHeader from './SectionHeader';
 import { mediaUrl } from '../config';
+import { useSite } from '../context/SiteContext';
+import { getLocalizationBucket } from '../utils/localization';
 
 const DestinationsGrid = ({ 
   title, 
@@ -11,6 +13,7 @@ const DestinationsGrid = ({
   onSelectDestination,
   accentColor = 'hsl(var(--primary))' 
 }) => {
+  const { language, t } = useSite();
   return (
     <section style={{ padding: '80px 0' }}>
       <SectionHeader title={title} subtitle={subtitle} center={true} accentColor={accentColor} />
@@ -21,8 +24,13 @@ const DestinationsGrid = ({
         gap: '1.5rem',
         marginTop: '3rem'
       }}>
-        {destinations.map((dest, i) => (
-          <motion.div
+        {destinations.map((dest, i) => {
+          const localized = getLocalizationBucket(dest, language);
+          const displayName = localized.name || dest.name;
+          const displayDescription = localized.description || dest.description;
+
+          return (
+            <motion.div
             key={i}
             initial={{ opacity: 0, y: 20 }}
             whileInView={{ opacity: 1, y: 0 }}
@@ -59,13 +67,16 @@ const DestinationsGrid = ({
             }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem' }}>
                 <MapPin size={16} color={accentColor} />
-                <span style={{ fontSize: '0.75rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.1em' }}>Destination</span>
+                <span style={{ fontSize: '0.75rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.1em' }}>
+                  {t.navDestinations || 'Destination'}
+                </span>
               </div>
-              <h3 style={{ fontSize: '1.75rem', fontWeight: 900, color: 'white' }}>{dest.name}</h3>
-              <p style={{ fontSize: '0.9rem', opacity: 0.8, marginTop: '0.5rem' }}>{dest.description}</p>
+              <h3 style={{ fontSize: '1.75rem', fontWeight: 900, color: 'white' }}>{displayName}</h3>
+              <p style={{ fontSize: '0.9rem', opacity: 0.8, marginTop: '0.5rem' }}>{displayDescription}</p>
             </div>
           </motion.div>
-        ))}
+          );
+        })}
       </div>
     </section>
   );

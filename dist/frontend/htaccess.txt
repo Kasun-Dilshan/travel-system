@@ -1,0 +1,29 @@
+<IfModule mod_rewrite.c>
+RewriteEngine On
+Options -MultiViews -Indexes
+RewriteBase /
+
+DirectoryIndex index.html
+
+# Serve existing files and directories as-is
+RewriteCond %{REQUEST_FILENAME} -f [OR]
+RewriteCond %{REQUEST_FILENAME} -d
+RewriteRule ^ - [L]
+
+# SPA fallback — fixes 404 when refreshing /inbound, /blog/..., etc.
+RewriteCond %{REQUEST_URI} !^/api(/|$) [NC]
+RewriteCond %{REQUEST_URI} !^/uploads/ [NC]
+RewriteCond %{REQUEST_URI} !\.php$ [NC]
+RewriteCond %{REQUEST_URI} !\.(css|js|mjs|map|png|jpe?g|gif|webp|svg|ico|woff2?|ttf|eot|json|xml|txt)$ [NC]
+RewriteRule . /index.html [L]
+</IfModule>
+
+<IfModule mod_mime.c>
+  AddType application/javascript .js .mjs
+  AddType text/css .css
+</IfModule>
+
+# -------------------------------------------------------------------
+# DEPLOY NOTE: FTP clients often skip dotfiles. After uploading, rename
+# this file to .htaccess in your hosting File Manager (public_html).
+# -------------------------------------------------------------------

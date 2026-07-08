@@ -5,9 +5,8 @@ import TourModal from '../components/TourModal';
 import DestinationModal from '../components/DestinationModal';
 import { DESTINATIONS } from '../data/destinations';
 import ContactSection from '../components/ContactSection';
-import LanguagePicker from '../components/LanguagePicker';
-import { TRANSLATIONS } from '../data/translations';
 import API_URL from '../config';
+import { useSite } from '../context/SiteContext';
 
 const fadeInUp = {
   hidden: { opacity: 0, y: 40 },
@@ -34,24 +33,23 @@ import SubAboutUs from '../components/SubAboutUs';
 import SectionHeader from '../components/SectionHeader';
 import DestinationsGrid from '../components/DestinationsGrid';
 import ServicesGrid from '../components/ServicesGrid';
-import BlogPreview from '../components/BlogPreview';
-import ReviewCarousel from '../components/ReviewCarousel';
 import InternalNav from '../components/InternalNav';
-import sigiriyaImg from '../assets/sigiriya.png';
-import kandyImg from '../assets/kandy.png';
-import mirissaImg from '../assets/mirissa.png';
-import galleImg from '../assets/galle.png';
-import trincomaleeImg from '../assets/trincomalee.png';
+import sigiriyaImg from '../assets/sigiriya.webp';
+import kandyImg from '../assets/kandy.webp';
+import mirissaImg from '../assets/mirissa.webp';
+import galleImg from '../assets/galle.webp';
+import trincomaleeImg from '../assets/trincomalee.webp';
 
 import SEO from '../components/SEO';
 
-export default function Inbound({ selectedLanguage = 'en', setSelectedLanguage }) {
+export default function Inbound() {
   const [selectedTour, setSelectedTour] = useState(null);
   const [tourOpen, setTourOpen] = useState(false);
   const [selectedDestination, setSelectedDestination] = useState(null);
   const [destOpen, setDestOpen] = useState(false);
   const [dynamicPackages, setDynamicPackages] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
+  const { language, t } = useSite();
 
   const openTour = (tour) => {
     setSelectedTour(tour);
@@ -76,14 +74,24 @@ export default function Inbound({ selectedLanguage = 'en', setSelectedLanguage }
   useEffect(() => {
     window.scrollTo(0, 0);
     fetchPackages();
-  }, []);
+  }, [language]);
 
   const fetchPackages = async () => {
     try {
-      const res = await fetch(`${API_URL}/packages`);
+      const res = await fetch(`${API_URL}/packages?lang=${encodeURIComponent(language)}`);
       if (!res.ok) throw new Error('Failed to fetch');
       const data = await res.json();
-      setDynamicPackages(data.filter(p => p.category === 'Inbound'));
+      const inbound = data.filter(p => p.category === 'Inbound');
+      setDynamicPackages(inbound);
+
+      // If a tour is already selected, re-bind it to the freshly fetched
+      // (language-specific) object so the modal/details update correctly.
+      setSelectedTour((prev) => {
+        if (!prev) return prev;
+        const prevId = prev._id ?? prev.id;
+        if (!prevId) return prev;
+        return inbound.find((p) => (p._id ?? p.id) === prevId) || prev;
+      });
     } catch (err) {
       console.error("Error fetching packages:", err);
     } finally {
@@ -94,8 +102,6 @@ export default function Inbound({ selectedLanguage = 'en', setSelectedLanguage }
   const allPackages = dynamicPackages;
   const roundTours = allPackages.filter(p => p.type === 'Round');
   const dayTours = allPackages.filter(p => !p.type || p.type === 'Day');
-
-  const t = TRANSLATIONS[selectedLanguage] || TRANSLATIONS.en;
 
   const destinations = DESTINATIONS;
 
@@ -111,8 +117,6 @@ export default function Inbound({ selectedLanguage = 'en', setSelectedLanguage }
     { label: t.navTours, id: 'tours-section' },
     { label: t.navDestinations, id: 'destinations-section' },
     { label: t.navServices, id: 'services-section' },
-    { label: t.navGuides, id: 'guides-section' },
-    { label: t.navReviews, id: 'reviews-section' },
     { label: t.navTerms, path: '/terms' },
     { label: t.navContact, id: 'contact-section' }
   ];
@@ -120,8 +124,8 @@ export default function Inbound({ selectedLanguage = 'en', setSelectedLanguage }
 
   return (
     <main 
-      dir={selectedLanguage === 'ar' ? 'rtl' : 'ltr'}
-      style={{ minHeight: '100vh', padding: '0 0 100px 0', textAlign: selectedLanguage === 'ar' ? 'right' : 'left' }}
+      dir={language === 'ar' ? 'rtl' : 'ltr'}
+      style={{ minHeight: '100vh', padding: '0 0 100px 0', textAlign: language === 'ar' ? 'right' : 'left' }}
     >
       <SEO 
         title={`${t.inboundTitle} | Serendib Inbound Tours`}
@@ -147,11 +151,11 @@ export default function Inbound({ selectedLanguage = 'en', setSelectedLanguage }
           {/* Round Tours Section */}
           {roundTours.length > 0 && (
             <section style={{ padding: '60px 0' }}>
-              <SectionHeader title={t.roundToursTitle} label="EXCURSIONS" />
+              <SectionHeader title={t.roundToursTitle} label={t.sectionLabelExcursions || 'EXCURSIONS'} />
               <motion.div variants={staggerContainer} initial="hidden" animate="visible" className="grid-layout">
                 {roundTours.map(p => (
                   <motion.div variants={fadeInUp} key={p._id || p.id}>
-                    <PackageCard pkg={p} image={p.image} onViewDetails={() => openTour(p)} lang={selectedLanguage} />
+                    <PackageCard pkg={p} image={p.image} onViewDetails={openTour} />
                   </motion.div>
                 ))}
               </motion.div>
@@ -161,11 +165,11 @@ export default function Inbound({ selectedLanguage = 'en', setSelectedLanguage }
           {/* Day Tours Section */}
           {dayTours.length > 0 && (
             <section style={{ padding: '60px 0' }}>
-              <SectionHeader title={t.dayToursTitle} label="DAY TRIPS" />
+              <SectionHeader title={t.dayToursTitle} label={t.sectionLabelDayTrips || 'DAY TRIPS'} />
               <motion.div variants={staggerContainer} initial="hidden" animate="visible" className="grid-layout">
                 {dayTours.map(p => (
                   <motion.div variants={fadeInUp} key={p._id || p.id}>
-                    <PackageCard pkg={p} image={p.image} onViewDetails={() => openTour(p)} lang={selectedLanguage} />
+                    <PackageCard pkg={p} image={p.image} onViewDetails={openTour} />
                   </motion.div>
                 ))}
               </motion.div>
@@ -185,23 +189,18 @@ export default function Inbound({ selectedLanguage = 'en', setSelectedLanguage }
           <ServicesGrid title={t.servicesTitle} serviceLabels={serviceLabels} />
         </div>
         
-        <div id="guides-section">
-          <BlogPreview title={t.guideTitle} />
-        </div>
-
-        <section id="reviews-section" style={{ padding: '80px 0' }}>
-          <SectionHeader title="What Travelers' Say" center={true} />
-          <ReviewCarousel />
-        </section>
-        
-
         <div id="contact-section">
-          <ContactSection type="inbound" lang={selectedLanguage} />
+          <ContactSection type="inbound" />
         </div>
       </div>
       
-      <TourModal isOpen={tourOpen} onClose={closeTour} tour={selectedTour} lang={selectedLanguage} />
-      <DestinationModal isOpen={destOpen} onClose={closeDestination} destination={selectedDestination} />
+      <TourModal isOpen={tourOpen} onClose={closeTour} tour={selectedTour} />
+      <DestinationModal
+        isOpen={destOpen}
+        onClose={closeDestination}
+        destination={selectedDestination}
+        headerBadge={t.inboundLabel}
+      />
     </main>
   );
 }

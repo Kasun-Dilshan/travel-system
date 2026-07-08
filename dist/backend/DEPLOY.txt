@@ -1,0 +1,22 @@
+SERENDIB TRAVEL — SITEGROUND / CPANEL DEPLOY
+===========================================
+
+Upload EVERYTHING in this folder into public_html (not the folder itself).
+
+Required files/folders on the server:
+  .htaccess   (or rename htaccess.txt → .htaccess if FTP skipped dotfiles)
+  .env        (copy from .env.example and set ADMIN_SECRET + JWT_SECRET + DB_*)
+  index.html
+  assets/
+  api/
+  config/
+  utils/
+  health.php
+
+Do NOT upload dist/frontend alone — it has no PHP API.
+
+After upload, verify:
+  https://your-domain/health.php     → JSON (not 404)
+  https://your-domain/api/packages   → JSON (not 404)
+
+Admin login password: ADMIN_SECRET in .env (default in .env.example: admin123)

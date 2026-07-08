@@ -4,17 +4,17 @@ import { ChevronLeft, ChevronRight, ArrowRight } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useSite } from '../context/SiteContext';
 
-import logoImg from '../assets/logo.png';
-import mountainImg from '../assets/carousel-mountain.png';
-import cityImg from '../assets/carousel-city.png';
-import safariImg from '../assets/carousel-safari.png';
-import wildlifeLankaImg from '../assets/carousel-wildlife-lanka.png';
-import lagoonImg from '../assets/carousel-lagoon.png';
+import beachImg from '../assets/carousel-beach.webp';
+import mountainImg from '../assets/carousel-mountain.webp';
+import cityImg from '../assets/carousel-city.webp';
+import safariImg from '../assets/carousel-safari.webp';
+import wildlifeLankaImg from '../assets/carousel-wildlife-lanka.webp';
+import lagoonImg from '../assets/carousel-lagoon.webp';
 
 const slides = [
   {
     id: 1,
-    image: logoImg,
+    image: beachImg,
     title: "Escape to Paradise",
     subtitle: "Discover the hidden gems of Sri Lanka's pristine coastline.",
     cta: "Explore Inbound Tours",

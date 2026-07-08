@@ -1,4 +1,4 @@
 User-agent: *
 Allow: /
 
-Sitemap: https://serendibtravel.com/sitemap.xml
+Sitemap: https://serendibdestinations.com/sitemap.xml

@@ -2,12 +2,14 @@ import React from 'react';
 import { motion } from 'framer-motion';
 import { ChevronRight, Globe, Compass } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import sigiriyaImg from '../assets/sigiriya.png';
-import parisImg from '../assets/paris.png';
+import sigiriyaImg from '../assets/sigiriya.webp';
+import parisImg from '../assets/paris.webp';
+import { useSite } from '../context/SiteContext';
 
 export default function Hero() {
   const [hovered, setHovered] = React.useState(null);
   const navigate = useNavigate();
+  const { t } = useSite();
 
   const itemVariants = {
     hidden: { opacity: 0, y: 30 },
@@ -20,9 +22,10 @@ export default function Hero() {
 
   return (
     <div style={{
-      height: '80vh',
-      minHeight: '600px',
+      height: 'clamp(480px, 80dvh, 920px)',
+      minHeight: 'min(600px, 90dvh)',
       width: '100vw',
+      maxWidth: '100%',
       position: 'relative',
       left: '50%',
       right: '50%',
@@ -70,7 +73,7 @@ export default function Hero() {
           zIndex: 2,
           textAlign: 'center',
           color: 'white',
-          padding: '4rem'
+          padding: 'clamp(1.25rem, 5vw, 4rem)'
         }}>
           <motion.div initial="hidden" whileInView="visible" variants={itemVariants}>
             <span style={{ 
@@ -84,7 +87,7 @@ export default function Hero() {
               textShadow: '0 2px 10px rgba(0,0,0,0.5)',
               borderLeft: '4px solid hsl(var(--primary))',
               paddingLeft: '1.5rem'
-            }}>AUTHENTIC SRI LANKA</span>
+            }}>{t?.heroSplitLeftLabel || 'AUTHENTIC SRI LANKA'}</span>
             <h2 className="serif" style={{ 
               fontSize: 'clamp(2.5rem, 6vw, 4.5rem)', 
               fontWeight: 800, 
@@ -92,13 +95,15 @@ export default function Hero() {
               lineHeight: 1,
               color: 'white',
               textShadow: '0 10px 40px rgba(0,0,0,0.8), 0 4px 10px rgba(0,0,0,0.5)'
-            }}>Explore <br/> Serendib</h2>
+            }}>
+              {(t?.heroSplitLeftTitleLine1 || 'Explore')} <br /> {(t?.heroSplitLeftTitleLine2 || 'Serendib')}
+            </h2>
             <div className="btn" style={{ 
               backgroundColor: 'white', 
               color: 'black',
               padding: '1rem 2.5rem'
             }}>
-              View Packages <ChevronRight size={20} />
+              {(t?.heroSplitLeftCta || 'View Packages')} <ChevronRight size={20} />
             </div>
           </motion.div>
         </div>
@@ -155,7 +160,7 @@ export default function Hero() {
           zIndex: 2,
           textAlign: 'center',
           color: 'white',
-          padding: '4rem'
+          padding: 'clamp(1.25rem, 5vw, 4rem)'
         }}>
           <motion.div initial="hidden" whileInView="visible" variants={itemVariants}>
             <span style={{ 
@@ -169,7 +174,7 @@ export default function Hero() {
               textShadow: '0 2px 10px rgba(0,0,0,0.5)',
               borderRight: '4px solid hsl(var(--accent))',
               paddingRight: '1.5rem'
-            }}>GLOBAL EXPLORATION</span>
+            }}>{t?.heroSplitRightLabel || 'GLOBAL EXPLORATION'}</span>
             <h2 className="serif" style={{ 
               fontSize: 'clamp(2.5rem, 6vw, 4.5rem)', 
               fontWeight: 800, 
@@ -177,13 +182,15 @@ export default function Hero() {
               lineHeight: 1,
               color: 'white',
               textShadow: '0 10px 40px rgba(0,0,0,0.8), 0 4px 10px rgba(0,0,0,0.5)'
-            }}>World of <br/> Wonder</h2>
+            }}>
+              {(t?.heroSplitRightTitleLine1 || 'World of')} <br /> {(t?.heroSplitRightTitleLine2 || 'Wonder')}
+            </h2>
             <div className="btn" style={{ 
               backgroundColor: 'white', 
               color: 'black',
               padding: '1rem 2.5rem'
             }}>
-              Discover More <ChevronRight size={20} />
+              {(t?.heroSplitRightCta || 'Discover More')} <ChevronRight size={20} />
             </div>
           </motion.div>
         </div>

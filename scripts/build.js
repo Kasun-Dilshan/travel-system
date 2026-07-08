@@ -60,5 +60,12 @@ if (!fs.existsSync(frontendDist)) {
 
 fs.cpSync(frontendDist, rootPublic, { recursive: true });
 
+// FTP clients often skip dotfiles — ship a visible copy users can rename to .htaccess.
+const htaccessSrc = path.join(rootPublic, '.htaccess');
+const htaccessBackup = path.join(rootPublic, 'htaccess.txt');
+if (fs.existsSync(htaccessSrc)) {
+  fs.copyFileSync(htaccessSrc, htaccessBackup);
+}
+
 console.log('\n✅ Build complete! Artifacts are staged in the root /public directory.');
 console.log('🔗 Vercel will serve these files from the root.');

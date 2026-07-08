@@ -1,5 +1,9 @@
 RewriteEngine On
 
+# Pass Authorization to PHP (JWT) on shared hosting / CGI.
+RewriteCond %{HTTP:Authorization} .
+RewriteRule ^ - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
+
 # Put this file at: public_html/api/.htaccess
 # It maps same-domain API endpoints like:
 #   /api/auth/login
@@ -25,3 +29,6 @@ RewriteRule ^blogs/slug/([^/]+)$ blogs.php?slug=$1 [L,QSA]
 # settings
 RewriteRule ^settings$ settings.php [L,QSA]
 
+# upload (multipart, admin JWT)
+RewriteRule ^upload$ upload.php [L,QSA]
+RewriteRule ^uploads/?$ uploads.php [L,QSA]

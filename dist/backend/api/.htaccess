@@ -1,0 +1,29 @@
+RewriteEngine On
+
+# Pass Authorization to PHP (JWT) on shared hosting / CGI.
+RewriteCond %{HTTP:Authorization} .
+RewriteRule ^ - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
+
+# Maps /api/* paths to PHP scripts in this folder (split-hosting layout).
+# Use when the SPA lives in public_html/ and PHP lives under public_html/api/.
+
+RewriteRule ^auth/login$ auth.php [L,QSA]
+
+RewriteRule ^packages$ packages.php [L,QSA]
+RewriteRule ^packages/([0-9]+)$ packages.php?id=$1 [L,QSA]
+
+RewriteRule ^bookings$ bookings.php [L,QSA]
+RewriteRule ^bookings/([0-9]+)$ bookings.php?id=$1 [L,QSA]
+
+RewriteRule ^blogs$ blogs.php [L,QSA]
+RewriteRule ^blogs/([0-9]+)$ blogs.php?id=$1 [L,QSA]
+RewriteRule ^blogs/slug/([^/]+)$ blogs.php?slug=$1 [L,QSA]
+
+RewriteRule ^settings$ settings.php [L,QSA]
+
+RewriteRule ^upload$ upload.php [L,QSA]
+
+RewriteRule ^reviews$ reviews.php [L,QSA]
+RewriteRule ^reviews/([0-9]+)$ reviews.php?id=$1 [L,QSA]
+
+RewriteRule ^uploads/?$ uploads.php [L,QSA]

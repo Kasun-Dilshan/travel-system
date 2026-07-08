@@ -1,27 +1,62 @@
+<IfModule mod_rewrite.c>
 RewriteEngine On
+Options -MultiViews -Indexes
+RewriteBase /
 
-# This file is written to work in BOTH cases:
-# 1) Backend is placed in domain root (routes are /api/...)
-# 2) Backend is placed in /api folder (routes are /auth/login, /packages, ...)
+# If the site lives in a subfolder (e.g. public_html/app/), uncomment and set:
+# RewriteBase /app/
 
-# /api/auth/login OR /auth/login -> auth.php
-RewriteRule ^(api/)?auth/login$ api/auth.php [L,QSA]
+# Pass Authorization to PHP (JWT). Without this, many CGI/FastCGI hosts drop the header.
+RewriteCond %{HTTP:Authorization} .
+RewriteRule ^ - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
 
-# /api/packages OR /packages -> packages.php
-RewriteRule ^(api/)?packages$ api/packages.php [L,QSA]
-RewriteRule ^(api/)?packages/([0-9]+)$ api/packages.php?id=$2 [L,QSA]
+DirectoryIndex index.html
 
-# /api/bookings OR /bookings -> bookings.php
-RewriteRule ^(api/)?bookings$ api/bookings.php [L,QSA]
-RewriteRule ^(api/)?bookings/([0-9]+)$ api/bookings.php?id=$2 [L,QSA]
+# -------------------------------------------------------------------
+# API routes (must run before SPA fallback)
+# -------------------------------------------------------------------
 
-# /api/blogs OR /blogs -> blogs.php
-RewriteRule ^(api/)?blogs$ api/blogs.php [L,QSA]
-RewriteRule ^(api/)?blogs/([0-9]+)$ api/blogs.php?id=$2 [L,QSA]
-RewriteRule ^(api/)?blogs/slug/([^/]+)$ api/blogs.php?slug=$2 [L,QSA]
+RewriteRule ^api/auth/login$ api/auth.php [L,QSA]
 
-# /api/settings OR /settings -> settings.php
-RewriteRule ^(api/)?settings$ api/settings.php [L,QSA]
+RewriteRule ^api/packages$ api/packages.php [L,QSA]
+RewriteRule ^api/packages/([0-9]+)$ api/packages.php?id=$1 [L,QSA]
 
-# /api/upload OR /upload -> upload.php (multipart, admin JWT)
-RewriteRule ^(api/)?upload$ api/upload.php [L,QSA]
+RewriteRule ^api/bookings$ api/bookings.php [L,QSA]
+RewriteRule ^api/bookings/([0-9]+)$ api/bookings.php?id=$1 [L,QSA]
+
+RewriteRule ^api/blogs$ api/blogs.php [L,QSA]
+RewriteRule ^api/blogs/([0-9]+)$ api/blogs.php?id=$1 [L,QSA]
+RewriteRule ^api/blogs/slug/([^/]+)$ api/blogs.php?slug=$1 [L,QSA]
+
+RewriteRule ^api/settings$ api/settings.php [L,QSA]
+
+RewriteRule ^api/upload$ api/upload.php [L,QSA]
+
+RewriteRule ^api/reviews$ api/reviews.php [L,QSA]
+RewriteRule ^api/reviews/([0-9]+)$ api/reviews.php?id=$1 [L,QSA]
+
+# Admin JSON list only — do not catch /uploads/image.jpg
+RewriteRule ^api/uploads/?$ api/uploads.php [L,QSA]
+
+# -------------------------------------------------------------------
+# Serve existing files and directories as-is
+# -------------------------------------------------------------------
+RewriteCond %{REQUEST_FILENAME} -f [OR]
+RewriteCond %{REQUEST_FILENAME} -d
+RewriteRule ^ - [L]
+
+# -------------------------------------------------------------------
+# SPA fallback — fixes 404 when refreshing /inbound, /blog/..., etc.
+# -------------------------------------------------------------------
+RewriteCond %{REQUEST_URI} !^/api(/|$) [NC]
+RewriteCond %{REQUEST_URI} !^/uploads/ [NC]
+RewriteCond %{REQUEST_URI} !\.php$ [NC]
+RewriteCond %{REQUEST_URI} !\.(css|js|mjs|map|png|jpe?g|gif|webp|svg|ico|woff2?|ttf|eot|json|xml|txt)$ [NC]
+RewriteRule . /index.html [L]
+</IfModule>
+
+# Correct MIME types (LiteSpeed / shared hosts — required for ES modules).
+<IfModule mod_mime.c>
+  AddType application/javascript .js .mjs
+  AddType text/css .css
+</IfModule>

@@ -10,15 +10,25 @@ $method = $_SERVER['REQUEST_METHOD'];
 
 function formatBlog($row) {
     if (isset($row['tags']) && !is_null($row['tags'])) {
-        $row['tags'] = json_decode($row['tags'], true);
+        $decoded = json_decode($row['tags'], true);
+        $row['tags'] = is_array($decoded) ? $decoded : [];
     } else {
         $row['tags'] = [];
+    }
+    if (isset($row['localizations']) && !is_null($row['localizations'])) {
+        $decoded = json_decode($row['localizations'], true);
+        $row['localizations'] = is_array($decoded) ? $decoded : [];
+    } else {
+        $row['localizations'] = [];
     }
     $row['_id'] = $row['id'];
     return $row;
 }
 
 if ($method === 'GET') {
+    if (!$pdo) {
+        sendResponse([]);
+    }
     if (isset($_GET['id']) || isset($_GET['slug'])) {
         $id = $_GET['id'] ?? null;
         $slug = $_GET['slug'] ?? null;
@@ -57,8 +67,8 @@ elseif ($method === 'POST') {
 
     $publishedAt = ($data['status'] === 'published') ? date('Y-m-d H:i:s') : null;
 
-    $sql = "INSERT INTO blogs (title, slug, excerpt, content, coverImage, tags, category, author, status, publishedAt, seoTitle, seoDescription, readTime) 
-            VALUES (:title, :slug, :excerpt, :content, :coverImage, :tags, :category, :author, :status, :publishedAt, :seoTitle, :seoDescription, :readTime)";
+    $sql = "INSERT INTO blogs (title, slug, excerpt, content, coverImage, tags, category, author, status, publishedAt, seoTitle, seoDescription, readTime, localizations) 
+            VALUES (:title, :slug, :excerpt, :content, :coverImage, :tags, :category, :author, :status, :publishedAt, :seoTitle, :seoDescription, :readTime, :localizations)";
     
     try {
         $stmt = $pdo->prepare($sql);
@@ -75,7 +85,8 @@ elseif ($method === 'POST') {
             'publishedAt' => $publishedAt,
             'seoTitle' => $data['seoTitle'] ?? '',
             'seoDescription' => $data['seoDescription'] ?? '',
-            'readTime' => $data['readTime'] ?? ''
+            'readTime' => $data['readTime'] ?? '',
+            'localizations' => json_encode($data['localizations'] ?? [])
         ]);
         $id = $pdo->lastInsertId();
         // Fetch and return full object
@@ -97,7 +108,7 @@ elseif ($method === 'PUT') {
             title = :title, slug = :slug, excerpt = :excerpt, content = :content, 
             coverImage = :coverImage, tags = :tags, category = :category, 
             author = :author, status = :status, seoTitle = :seoTitle, 
-            seoDescription = :seoDescription, readTime = :readTime 
+            seoDescription = :seoDescription, readTime = :readTime, localizations = :localizations 
             WHERE id = :id";
     
     try {
@@ -115,7 +126,8 @@ elseif ($method === 'PUT') {
             'status' => $data['status'] ?? 'draft',
             'seoTitle' => $data['seoTitle'] ?? '',
             'seoDescription' => $data['seoDescription'] ?? '',
-            'readTime' => $data['readTime'] ?? ''
+            'readTime' => $data['readTime'] ?? '',
+            'localizations' => json_encode($data['localizations'] ?? [])
         ]);
         // Fetch and return full object
         $stmt = $pdo->prepare('SELECT * FROM blogs WHERE id = ?');
