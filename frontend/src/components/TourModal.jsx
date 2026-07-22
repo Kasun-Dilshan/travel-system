@@ -561,7 +561,7 @@ export default function TourModal({ isOpen, onClose, tour, lang }) {
                     height: '300px'
                   }}>
                     {hasRoute ? (
-                      <MapComponent stops={stops} path={rawPath} />
+                      <MapComponent stops={stops} path={rawPath} dayMode={stops.some((s) => s?.day)} />
                     ) : (
                       <div style={{ padding: '2rem', textAlign: 'center', display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%' }}>
                         <p style={{ color: 'hsl(var(--foreground) / 0.5)', fontSize: '0.9rem' }}>

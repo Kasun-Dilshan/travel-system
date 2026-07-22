@@ -1,7 +1,7 @@
 -- SQL Schema for Travel Business System
 
-CREATE DATABASE IF NOT EXISTS travel_system;
-USE travel_system;
+CREATE DATABASE IF NOT EXISTS seredpjb_travel;
+USE seredpjb_travel;
 
 -- 1. Packages Table
 CREATE TABLE IF NOT EXISTS packages (
@@ -17,6 +17,8 @@ CREATE TABLE IF NOT EXISTS packages (
     inclusions JSON,
     exclusions JSON,
     category ENUM('Inbound', 'Outbound') NOT NULL,
+    continentId VARCHAR(64) NULL,
+    countryId VARCHAR(64) NULL,
     type ENUM('Day', 'Round') DEFAULT 'Day',
     featured BOOLEAN DEFAULT FALSE,
     isHot BOOLEAN DEFAULT FALSE,
@@ -106,7 +108,40 @@ CREATE TABLE IF NOT EXISTS site_settings (
 -- Insert default settings if not exists
 INSERT IGNORE INTO site_settings (id, siteId, heroTitle, heroSubtitle) VALUES (1, 'main', 'Discover Sri Lanka\'s Hidden Paradise', 'Your journey to the gem of the Indian Ocean starts here.');
 
--- 5. Reviews (user submitted; admin approves)
+-- 5. Outbound destinations: regions (continents) + countries
+CREATE TABLE IF NOT EXISTS regions (
+    id VARCHAR(64) PRIMARY KEY,
+    name VARCHAR(255) NOT NULL,
+    description TEXT,
+    image VARCHAR(255) DEFAULT '',
+    sortOrder INT DEFAULT 0,
+    localizations JSON,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS countries (
+    id VARCHAR(64) PRIMARY KEY,
+    regionId VARCHAR(64) NOT NULL,
+    name VARCHAR(255) NOT NULL,
+    description TEXT,
+    fullDescription TEXT,
+    image VARCHAR(255) DEFAULT '',
+    images JSON,
+    matchKeys JSON,
+    facts JSON,
+    tips JSON,
+    highlights JSON,
+    sortOrder INT DEFAULT 0,
+    localizations JSON,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    CONSTRAINT fk_countries_regionId FOREIGN KEY (regionId)
+        REFERENCES regions(id) ON DELETE CASCADE,
+    INDEX idx_countries_regionId (regionId)
+);
+
+-- 6. Reviews (user submitted; admin approves)
 CREATE TABLE IF NOT EXISTS reviews (
     id INT AUTO_INCREMENT PRIMARY KEY,
     name VARCHAR(120) NOT NULL,

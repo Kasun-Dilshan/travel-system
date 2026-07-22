@@ -35,6 +35,8 @@ RewriteRule ^api/upload$ api/upload.php [L,QSA]
 RewriteRule ^api/reviews$ api/reviews.php [L,QSA]
 RewriteRule ^api/reviews/([0-9]+)$ api/reviews.php?id=$1 [L,QSA]
 
+RewriteRule ^api/destinations$ api/destinations.php [L,QSA]
+
 # Admin JSON list only — do not catch /uploads/image.jpg
 RewriteRule ^api/uploads/?$ api/uploads.php [L,QSA]
 

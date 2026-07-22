@@ -28,7 +28,7 @@ export default function BookingPage() {
 
   if (!tour) {
     return (
-      <div className="container" style={{ padding: '8rem 2rem', textAlign: 'center' }}>
+      <div className="container" style={{ padding: '3rem 2rem', textAlign: 'center' }}>
         <SEO title="No Tour Selected" description="Please select a tour to proceed with booking." />
         <h2 style={{ fontSize: '2rem', marginBottom: '1rem' }}>No Tour Selected</h2>
         <button onClick={() => navigate('/')} className="btn btn-primary">Go Home</button>
@@ -82,7 +82,7 @@ export default function BookingPage() {
   if (isSuccess) {
     return (
       <div className="container" style={{
-        padding: '8rem 2rem',
+        padding: '3rem 2rem',
         display: 'flex',
         flexDirection: 'column',
         alignItems: 'center',
@@ -111,7 +111,7 @@ export default function BookingPage() {
 
   return (
     <div style={{
-      padding: 'max(6rem, calc(5rem + env(safe-area-inset-top, 0px))) max(1.25rem, 2rem) 3rem',
+      padding: '2rem max(1.25rem, 2rem) 3rem',
       paddingLeft: 'max(1.25rem, 2rem, env(safe-area-inset-left, 0px))',
       paddingRight: 'max(1.25rem, 2rem, env(safe-area-inset-right, 0px))',
       paddingBottom: 'max(3rem, env(safe-area-inset-bottom, 0px))',

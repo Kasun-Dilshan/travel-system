@@ -128,7 +128,7 @@ export default function Reviews() {
   };
 
   return (
-    <main style={{ paddingTop: '110px' }}>
+    <main style={{ paddingTop: '1.5rem' }}>
       <SEO
         title="Reviews | Serendib Travel & Tours"
         description="Read traveler reviews and share your experience."

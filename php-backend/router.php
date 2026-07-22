@@ -24,6 +24,7 @@ if ($uri !== '/' && file_exists($requestedPath) && !is_dir($requestedPath)) {
 // - /api/settings
 // - /api/upload
 // - /api/reviews, /api/reviews/{id}
+// - /api/destinations
 
 if ($uri === '/api/auth/login') {
   require __DIR__ . '/api/auth.php';
@@ -87,6 +88,11 @@ if ($uri === '/api/reviews') {
 if (preg_match('#^/api/reviews/([0-9]+)$#', $uri, $m)) {
   $_GET['id'] = $m[1];
   require __DIR__ . '/api/reviews.php';
+  exit;
+}
+
+if ($uri === '/api/destinations') {
+  require __DIR__ . '/api/destinations.php';
   exit;
 }
 

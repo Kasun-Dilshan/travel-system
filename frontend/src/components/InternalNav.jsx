@@ -72,7 +72,7 @@ const InternalNav = ({ links, accentColor = 'hsl(var(--primary))' }) => {
       className={`internal-nav ${isSticky ? 'sticky' : ''}`}
       style={{
         position: isSticky ? 'fixed' : 'relative',
-        top: isSticky ? '80px' : '0',
+        top: isSticky ? '88px' : '0',
         left: '0',
         width: '100%',
         zIndex: 40,

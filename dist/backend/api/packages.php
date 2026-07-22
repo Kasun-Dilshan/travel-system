@@ -10,6 +10,34 @@ handleCors();
 $method = $_SERVER['REQUEST_METHOD'];
 
 /**
+ * Ensure destination columns exist (outbound region/country linking).
+ * Safe to call repeatedly — skips columns that are already present.
+ */
+function ensurePackageDestinationColumns($pdo): void {
+    static $done = false;
+    if ($done || !$pdo) return;
+    $done = true;
+    try {
+        $cols = $pdo->query('SHOW COLUMNS FROM packages')->fetchAll(PDO::FETCH_COLUMN);
+        $have = array_flip(array_map('strval', $cols ?: []));
+        if (!isset($have['continentId'])) {
+            $pdo->exec('ALTER TABLE packages ADD COLUMN continentId VARCHAR(64) NULL AFTER category');
+        }
+        if (!isset($have['countryId'])) {
+            $pdo->exec('ALTER TABLE packages ADD COLUMN countryId VARCHAR(64) NULL AFTER continentId');
+        }
+    } catch (Throwable $e) {
+        // Non-fatal: INSERT/UPDATE will surface a clearer error if columns are missing.
+    }
+}
+
+function normalizeDestinationId($value): ?string {
+    if ($value === null) return null;
+    $s = trim((string) $value);
+    return $s === '' ? null : $s;
+}
+
+/**
  * Cover image must be a single URL/path string. Some rows were saved with trailing
  * " []" (or a JSON array string) so the browser requested a non-existent path.
  */
@@ -59,6 +87,14 @@ function prepareData($data) {
     }
     if (array_key_exists('image', $data)) {
         $data['image'] = normalizePackageImage($data['image']);
+    }
+    $category = isset($data['category']) ? (string) $data['category'] : '';
+    if ($category !== 'Outbound') {
+        $data['continentId'] = null;
+        $data['countryId'] = null;
+    } else {
+        $data['continentId'] = normalizeDestinationId($data['continentId'] ?? null);
+        $data['countryId'] = normalizeDestinationId($data['countryId'] ?? null);
     }
     return $data;
 }
@@ -332,6 +368,7 @@ function formatSeedRow(array $row): array {
 }
 
 if ($method === 'GET') {
+    if ($pdo) ensurePackageDestinationColumns($pdo);
     $lang = $_GET['lang'] ?? null;
     $lang = is_string($lang) ? trim($lang) : null;
     if (isset($_GET['id'])) {
@@ -395,11 +432,12 @@ if ($method === 'GET') {
 elseif ($method === 'POST') {
     requireAdmin();
     if (!$pdo) sendResponse(['message' => 'Database unavailable'], 503);
+    ensurePackageDestinationColumns($pdo);
     $data = getRequestBody();
     $data = prepareData($data);
 
-    $sql = "INSERT INTO packages (title, price, image, gallery, duration, description, highlights, itinerary, inclusions, exclusions, category, type, featured, isHot, localizations, route, isLimitedTime, discountPercentage, expiryDate, seoTitle, seoDescription) 
-            VALUES (:title, :price, :image, :gallery, :duration, :description, :highlights, :itinerary, :inclusions, :exclusions, :category, :type, :featured, :isHot, :localizations, :route, :isLimitedTime, :discountPercentage, :expiryDate, :seoTitle, :seoDescription)";
+    $sql = "INSERT INTO packages (title, price, image, gallery, duration, description, highlights, itinerary, inclusions, exclusions, category, continentId, countryId, type, featured, isHot, localizations, route, isLimitedTime, discountPercentage, expiryDate, seoTitle, seoDescription) 
+            VALUES (:title, :price, :image, :gallery, :duration, :description, :highlights, :itinerary, :inclusions, :exclusions, :category, :continentId, :countryId, :type, :featured, :isHot, :localizations, :route, :isLimitedTime, :discountPercentage, :expiryDate, :seoTitle, :seoDescription)";
     
     try {
         $stmt = $pdo->prepare($sql);
@@ -415,6 +453,8 @@ elseif ($method === 'POST') {
             'inclusions' => $data['inclusions'] ?? '[]',
             'exclusions' => $data['exclusions'] ?? '[]',
             'category' => $data['category'],
+            'continentId' => $data['continentId'] ?? null,
+            'countryId' => $data['countryId'] ?? null,
             'type' => $data['type'] ?? 'Day',
             'featured' => isset($data['featured']) ? (int)$data['featured'] : 0,
             'isHot' => isset($data['isHot']) ? (int)$data['isHot'] : 0,
@@ -440,6 +480,7 @@ elseif ($method === 'POST') {
 elseif ($method === 'PUT') {
     requireAdmin();
     if (!$pdo) sendResponse(['message' => 'Database unavailable'], 503);
+    ensurePackageDestinationColumns($pdo);
     $data = getRequestBody();
     if (!isset($data['id']) && !isset($_GET['id'])) {
         sendResponse(['message' => 'ID is required'], 400);
@@ -451,7 +492,8 @@ elseif ($method === 'PUT') {
             title = :title, price = :price, image = :image, gallery = :gallery, 
             duration = :duration, description = :description, highlights = :highlights, 
             itinerary = :itinerary, inclusions = :inclusions, exclusions = :exclusions, 
-            category = :category, type = :type, featured = :featured, isHot = :isHot,
+            category = :category, continentId = :continentId, countryId = :countryId,
+            type = :type, featured = :featured, isHot = :isHot,
             localizations = :localizations, route = :route, isLimitedTime = :isLimitedTime, 
             discountPercentage = :discountPercentage, expiryDate = :expiryDate, 
             seoTitle = :seoTitle, seoDescription = :seoDescription 
@@ -472,6 +514,8 @@ elseif ($method === 'PUT') {
             'inclusions' => $data['inclusions'] ?? '[]',
             'exclusions' => $data['exclusions'] ?? '[]',
             'category' => $data['category'],
+            'continentId' => $data['continentId'] ?? null,
+            'countryId' => $data['countryId'] ?? null,
             'type' => $data['type'] ?? 'Day',
             'featured' => isset($data['featured']) ? (int)$data['featured'] : 0,
             'isHot' => isset($data['isHot']) ? (int)$data['isHot'] : 0,

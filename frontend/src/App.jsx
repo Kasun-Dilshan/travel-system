@@ -16,6 +16,9 @@ import HotPackagePopup from "./components/HotPackagePopup";
 const Home = lazy(() => import("./pages/Home"));
 const Inbound = lazy(() => import("./pages/Inbound"));
 const Outbound = lazy(() => import("./pages/Outbound"));
+const OutboundDestinations = lazy(() => import("./pages/OutboundDestinations"));
+const OutboundContinent = lazy(() => import("./pages/OutboundContinent"));
+const OutboundCountry = lazy(() => import("./pages/OutboundCountry"));
 const BookingPage = lazy(() => import("./pages/BookingPage"));
 const AdminDashboard = lazy(() => import("./pages/AdminDashboard"));
 const TermsConditions = lazy(() => import("./pages/TermsConditions"));
@@ -53,6 +56,7 @@ const ScrollToTop = () => {
 const Layout = ({ children }) => {
   const location = useLocation();
   const isAdmin = location.pathname.startsWith("/admin");
+  const isDestinationsPicker = location.pathname === "/outbound/destinations";
   const { localizedSettings: settings, t } = useSite();
   const announcementEnabled =
     settings?.announcementEnabled === true ||
@@ -60,7 +64,7 @@ const Layout = ({ children }) => {
     settings?.announcementEnabled === "1";
 
   return (
-    <div className="site-shell">
+    <div className="site-shell" style={isDestinationsPicker ? { height: '100dvh', overflow: 'hidden' } : undefined}>
       <ScrollToTop />
       {!isAdmin && announcementEnabled && settings?.announcementText && (
         <div className="announcement-banner">
@@ -75,13 +79,20 @@ const Layout = ({ children }) => {
       {!isAdmin && <FloatingObjects />}
       {!isAdmin && <Navbar />}
       
-      <div className="site-main">
+      <div
+        className="site-main"
+        style={
+          isDestinationsPicker
+            ? { flex: 1, minHeight: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }
+            : undefined
+        }
+      >
         <Suspense fallback={<PageLoader />}>
           {children}
         </Suspense>
       </div>
 
-      {!isAdmin && <Footer />}
+      {!isAdmin && !isDestinationsPicker && <Footer />}
       {!isAdmin && <CookieBanner />}
       {!isAdmin && <HotPackagePopup />}
     </div>
@@ -97,6 +108,9 @@ function AppRoutes() {
           <Route path="/" element={<Home />} />
           <Route path="/inbound" element={<Inbound />} />
           <Route path="/outbound" element={<Outbound />} />
+          <Route path="/outbound/destinations" element={<OutboundDestinations />} />
+          <Route path="/outbound/destinations/:continentId" element={<OutboundContinent />} />
+          <Route path="/outbound/destinations/:continentId/:countryId" element={<OutboundCountry />} />
           <Route path="/booking" element={<BookingPage />} />
           <Route path="/blog" element={<Blog />} />
           <Route path="/blog/:slug" element={<BlogPost />} />

@@ -90,6 +90,11 @@ if (preg_match('#^/api/reviews/([0-9]+)$#', $uri, $m)) {
   exit;
 }
 
+if ($uri === '/api/destinations') {
+  require __DIR__ . '/api/destinations.php';
+  exit;
+}
+
 // SPA fallback for built frontend (mirrors .htaccess — fixes refresh 404 on php -S).
 $indexHtml = __DIR__ . '/index.html';
 if (file_exists($indexHtml)) {

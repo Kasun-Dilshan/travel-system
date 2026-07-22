@@ -186,7 +186,7 @@ h1, h2, h3, h4, h5, h6 {
     flex-direction: column !important;
     height: auto !important;
     min-height: unset !important;
-    margin-top: calc(5.5rem + env(safe-area-inset-top, 0px)) !important;
+    margin-top: 0 !important;
   }
   
   .hero-divider {

@@ -13,7 +13,7 @@ const DefaultIcon = L.icon({
   iconAnchor: [12, 41],
 });
 
-export default function MapComponent({ stops = [], path = [] }) {
+export default function MapComponent({ stops = [], path = [], height = '350px', dayMode = false }) {
   const mapRef = useRef(null);
   const mapInstance = useRef(null);
 
@@ -47,31 +47,32 @@ export default function MapComponent({ stops = [], path = [] }) {
       }).addTo(mapInstance.current);
     }
 
-    // Add Markers
+    // Add Markers (day number when available)
     stops.forEach((stop, idx) => {
+      const markerNum = dayMode && stop.day ? stop.day : idx + 1;
       const customIcon = L.divIcon({
         className: 'custom-numbered-marker',
         html: `<div style="
           background-color: hsl(142 76% 36%);
           color: white;
-          width: 24px;
-          height: 24px;
+          width: 26px;
+          height: 26px;
           border-radius: 50%;
           display: flex;
           align-items: center;
           justify-content: center;
           font-weight: 800;
-          font-size: 12px;
+          font-size: 11px;
           border: 2px solid white;
           box-shadow: 0 2px 4px rgba(0,0,0,0.3);
-        ">${idx + 1}</div>`,
-        iconSize: [24, 24],
-        iconAnchor: [12, 12],
+        ">${markerNum}</div>`,
+        iconSize: [26, 26],
+        iconAnchor: [13, 13],
       });
 
       L.marker([stop.lat, stop.lng], { icon: customIcon })
         .addTo(mapInstance.current)
-        .bindPopup(`<b>${stop.label || `Stop ${idx + 1}`}</b>`);
+        .bindPopup(`<b>${stop.label || (dayMode ? `Day ${markerNum}` : `Stop ${idx + 1}`)}</b>`);
     });
 
     // Fit Bounds
@@ -85,13 +86,13 @@ export default function MapComponent({ stops = [], path = [] }) {
         mapInstance.current = null;
       }
     };
-  }, [stops, path]);
+  }, [stops, path, dayMode]);
 
   return (
     <div 
       ref={mapRef} 
       style={{ 
-        height: '350px', 
+        height, 
         width: '100%', 
         borderRadius: '1.5rem', 
         overflow: 'hidden',

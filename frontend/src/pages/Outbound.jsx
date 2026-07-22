@@ -1,9 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion } from 'framer-motion';
 import PackageCard from '../components/PackageCard';
 import TourModal from '../components/TourModal';
-import DestinationModal from '../components/DestinationModal';
-import { OUTBOUND_DESTINATIONS } from '../data/outbound-destinations';
 import ContactSection from '../components/ContactSection';
 import API_URL from '../config';
 import { useSite } from '../context/SiteContext';
@@ -31,7 +29,7 @@ const staggerContainer = {
 import SubHero from '../components/SubHero';
 import SubAboutUs from '../components/SubAboutUs';
 import SectionHeader from '../components/SectionHeader';
-import DestinationsGrid from '../components/DestinationsGrid';
+import OutboundDestinationsExplorer from '../components/OutboundDestinationsExplorer';
 import ServicesGrid from '../components/ServicesGrid';
 import parisImg from '../assets/paris.webp';
 
@@ -40,8 +38,6 @@ import SEO from '../components/SEO';
 export default function Outbound() {
   const [selectedTour, setSelectedTour] = useState(null);
   const [tourOpen, setTourOpen] = useState(false);
-  const [selectedDestination, setSelectedDestination] = useState(null);
-  const [destOpen, setDestOpen] = useState(false);
   const [dynamicPackages, setDynamicPackages] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const { language, t } = useSite();
@@ -54,16 +50,6 @@ export default function Outbound() {
   const closeTour = () => {
     setTourOpen(false);
     setSelectedTour(null);
-  };
-
-  const openDestination = (dest) => {
-    setSelectedDestination(dest);
-    setDestOpen(true);
-  };
-
-  const closeDestination = () => {
-    setDestOpen(false);
-    setSelectedDestination(null);
   };
 
   useEffect(() => {
@@ -97,8 +83,6 @@ export default function Outbound() {
   const allPackages = dynamicPackages;
   const roundTours = allPackages.filter(p => p.type === 'Round');
   const dayTours = allPackages.filter(p => !p.type || p.type === 'Day');
-
-  const destinations = OUTBOUND_DESTINATIONS;
 
   const serviceLabels = {
     transport: t.serviceTransport,
@@ -164,14 +148,7 @@ export default function Outbound() {
           )}
         </div>
 
-        <div id="destinations-section">
-          <DestinationsGrid
-            title={t.destinationsTitle}
-            destinations={destinations}
-            onSelectDestination={openDestination}
-            accentColor="hsl(var(--accent))"
-          />
-        </div>
+        <OutboundDestinationsExplorer />
         
         <div id="services-section">
           <ServicesGrid title={t.servicesTitle} serviceLabels={serviceLabels} accentColor="hsl(var(--accent))" />
@@ -183,12 +160,6 @@ export default function Outbound() {
       </div>
       
       <TourModal isOpen={tourOpen} onClose={closeTour} tour={selectedTour} />
-      <DestinationModal
-        isOpen={destOpen}
-        onClose={closeDestination}
-        destination={selectedDestination}
-        headerBadge={t.outboundLabel}
-      />
     </main>
   );
 }

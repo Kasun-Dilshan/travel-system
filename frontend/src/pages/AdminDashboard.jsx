@@ -1,12 +1,14 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import API_URL, { mediaUrl } from '../config';
 import AdminLogin from '../components/AdminLogin';
+import MapComponent from '../components/MapComponent';
 import { getLocalizationBucket, normalizeLanguageCode } from '../utils/localization';
 import { getPackageLocalizationFallback } from '../utils/packageLocalizationFallback';
 import { useSite } from '../context/SiteContext';
 import { RevenueChart, CategoryDistribution } from '../components/DashboardCharts';
 import { formatMoney } from '../utils/money';
+import { buildRouteFromItinerary, extractDayStopsFromItinerary, routeKey, cleanTextLines } from '../utils/geocodeRoute';
 import {
   Users, Calendar, Phone, Mail, MapPin, Trash2,
   CheckCircle2, X, Clock, Search, AlertCircle,
@@ -15,6 +17,20 @@ import {
   DollarSign, BookOpen, Globe, Image, Link as LinkIcon,
   ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Eye, EyeOff, Star, Tag, FileText
 } from 'lucide-react';
+import { OUTBOUND_CONTINENTS, mergeContinentsWithFallback } from '../data/outbound-regions';
+import AdminDestinationsTab from '../components/AdminDestinationsTab';
+
+function countryCodeForPackage(form) {
+  if (form?.category === 'Inbound') return 'LK';
+  const countryId = String(form?.countryId || '').toLowerCase();
+  const codeByCountry = {
+    japan: 'JP', china: 'CN', india: 'IN', singapore: 'SG', thailand: 'TH',
+    uae: 'AE', dubai: 'AE', 'saudi-arabia': 'SA', france: 'FR', 'united-kingdom': 'GB',
+    uk: 'GB', germany: 'DE', italy: 'IT', spain: 'ES', australia: 'AU',
+    'united-states': 'US', usa: 'US', maldives: 'MV', malaysia: 'MY', indonesia: 'ID',
+  };
+  return codeByCountry[countryId] || undefined;
+}
 
 // ─── Helpers ───────────────────────────────────────────────────────────────
 function authHeaders() {
@@ -80,6 +96,7 @@ export default function AdminDashboard() {
   const [currentBooking, setCurrentBooking] = useState(null);
   const [packages, setPackages] = useState([]);
   const [blogs, setBlogs] = useState([]);
+  const [destinations, setDestinations] = useState(OUTBOUND_CONTINENTS);
   const [siteSettings, setSiteSettings] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -98,9 +115,12 @@ export default function AdminDashboard() {
   const [pkgLibraryFiles, setPkgLibraryFiles] = useState([]);
   const [isLoadingPkgLibrary, setIsLoadingPkgLibrary] = useState(false);
   const [pkgLibraryError, setPkgLibraryError] = useState('');
-  const emptyPkg = { title: '', price: 0, image: '', gallery: [], duration: '', description: '', category: 'Inbound', type: 'Round', inclusions: [], exclusions: [], highlights: [], itinerary: [], featured: false, isHot: false, isLimitedTime: false, discountPercentage: 0, seoTitle: '', seoDescription: '' };
+  const emptyPkg = { title: '', price: 0, image: '', gallery: [], duration: '', description: '', category: 'Inbound', continentId: '', countryId: '', type: 'Round', inclusions: [], exclusions: [], highlights: [], itinerary: [], route: { stops: [], path: [] }, featured: false, isHot: false, isLimitedTime: false, discountPercentage: 0, seoTitle: '', seoDescription: '' };
   const [pkgForm, setPkgForm] = useState(emptyPkg);
   const [pkgBaseSnapshot, setPkgBaseSnapshot] = useState(null);
+  const [isGeocodingRoute, setIsGeocodingRoute] = useState(false);
+  const [routeGeoStatus, setRouteGeoStatus] = useState('');
+  const routeGenRef = useRef(0);
 
   // Blog modal
   const [isBlogModalOpen, setIsBlogModalOpen] = useState(false);
@@ -202,6 +222,15 @@ export default function AdminDashboard() {
       { key: 'packages', url: `${API_URL}/packages`, apply: (data) => { if (Array.isArray(data)) setPackages(data); } },
       { key: 'blogs', url: `${API_URL}/blogs?all=true`, apply: (data) => { if (Array.isArray(data)) setBlogs(data); } },
       {
+        key: 'destinations',
+        url: `${API_URL}/destinations`,
+        apply: (data) => {
+          if (Array.isArray(data)) {
+            setDestinations(mergeContinentsWithFallback(data, OUTBOUND_CONTINENTS));
+          }
+        },
+      },
+      {
         key: 'settings',
         url: `${API_URL}/settings`,
         apply: (data) => {
@@ -274,11 +303,25 @@ export default function AdminDashboard() {
   };
 
   // ── Packages ──────────────────────────────────────────────────────────────
+  const normalizeRoute = (route) => {
+    if (!route || typeof route !== 'object') return { stops: [], path: [] };
+    const stops = Array.isArray(route.stops) ? route.stops.filter((s) => Number.isFinite(Number(s?.lat)) && Number.isFinite(Number(s?.lng))) : [];
+    const path = Array.isArray(route.path) && route.path.length
+      ? route.path.filter((p) => Number.isFinite(Number(p?.lat)) && Number.isFinite(Number(p?.lng)))
+      : stops.map((s) => ({ lat: s.lat, lng: s.lng }));
+    return { stops, path };
+  };
+
   const handleOpenPkgModal = (pkg = null) => {
     setCurrentPackage(pkg);
     setPkgPreviewIndex(0);
     setIsPkgLibraryOpen(false);
     setPkgLibraryError('');
+    setRouteGeoStatus('');
+    setIsGeocodingRoute(false);
+    routeGenRef.current += 1;
+
+    const existingRoute = normalizeRoute(pkg?.route);
 
     // Keep an immutable snapshot of the base (English/source) fields so that
     // saving while viewing a different language only updates `localizations[lang]`
@@ -291,11 +334,14 @@ export default function AdminDashboard() {
       duration: pkg.duration || '',
       description: pkg.description || '',
       category: pkg.category || 'Inbound',
+      continentId: pkg.continentId || '',
+      countryId: pkg.countryId || '',
       type: pkg.type || 'Round',
       inclusions: Array.isArray(pkg.inclusions) ? pkg.inclusions : [],
       exclusions: Array.isArray(pkg.exclusions) ? pkg.exclusions : [],
       highlights: Array.isArray(pkg.highlights) ? pkg.highlights : [],
       itinerary: Array.isArray(pkg.itinerary) ? pkg.itinerary : [],
+      route: existingRoute,
       featured: !!pkg.featured,
       isHot: !!pkg.isHot,
       isLimitedTime: !!pkg.isLimitedTime,
@@ -320,11 +366,14 @@ export default function AdminDashboard() {
       duration: pickLocalizedField(localized.duration, pkg.duration),
       description: pickLocalizedField(localized.description, pkg.description),
       category: pickLocalizedField(localized.category, pkg.category) || 'Inbound',
+      continentId: pkg.continentId || '',
+      countryId: pkg.countryId || '',
       type: pickLocalizedField(localized.type, pkg.type) || 'Round',
       inclusions: pickLocalizedArray(localized.inclusions, pkg.inclusions),
       exclusions: pickLocalizedArray(localized.exclusions, pkg.exclusions),
       highlights: pickLocalizedArray(localized.highlights, pkg.highlights),
       itinerary: pickLocalizedArray(localized.itinerary, pkg.itinerary),
+      route: existingRoute,
       featured: pkg.featured || false,
       isHot: pkg.isHot || false,
       isLimitedTime: pkg.isLimitedTime || false,
@@ -334,6 +383,64 @@ export default function AdminDashboard() {
     } : emptyPkg);
     setIsPkgModalOpen(true);
   };
+
+  // Auto-generate day-by-day tour route whenever itinerary place names change
+  useEffect(() => {
+    if (!isPkgModalOpen) return;
+
+    const itinerary = Array.isArray(pkgForm.itinerary) ? pkgForm.itinerary : [];
+    const dayStops = extractDayStopsFromItinerary(itinerary);
+    const labelsKey = dayStops.map((s) => s.label).join('|').toLowerCase();
+    const hasAnyText = itinerary.some((line) => String(line ?? '').trim());
+
+    if (!dayStops.length) {
+      if (!hasAnyText) {
+        setPkgForm((p) => {
+          const current = normalizeRoute(p.route);
+          if (!current.stops.length) return p;
+          return { ...p, route: { stops: [], path: [] } };
+        });
+        setRouteGeoStatus('');
+      } else {
+        setRouteGeoStatus('Add place names (e.g. Day 1: Sigiriya) — press Enter for the next day');
+      }
+      setIsGeocodingRoute(false);
+      return;
+    }
+
+    const currentStops = normalizeRoute(pkgForm.route).stops;
+    const currentLabelsKey = currentStops.map((s) => String(s.label || '').trim()).join('|').toLowerCase();
+    if (labelsKey === currentLabelsKey && currentStops.length === dayStops.length) {
+      setRouteGeoStatus(`${currentStops.length} day${currentStops.length === 1 ? '' : 's'} on map`);
+      return;
+    }
+
+    const gen = ++routeGenRef.current;
+    const timer = setTimeout(async () => {
+      setIsGeocodingRoute(true);
+      setRouteGeoStatus('Finding day locations on map…');
+      try {
+        const route = await buildRouteFromItinerary(itinerary, {
+          countryCode: countryCodeForPackage(pkgForm),
+        });
+        if (gen !== routeGenRef.current) return;
+        setPkgForm((p) => ({ ...p, route }));
+        if (route.stops.length) {
+          setRouteGeoStatus(`${route.stops.length} of ${dayStops.length} day${dayStops.length === 1 ? '' : 's'} plotted`);
+        } else {
+          setRouteGeoStatus('No places found — use clear place names (e.g. Day 1: Sigiriya)');
+        }
+      } catch {
+        if (gen !== routeGenRef.current) return;
+        setRouteGeoStatus('Could not look up locations. Check your connection and try again.');
+      } finally {
+        if (gen === routeGenRef.current) setIsGeocodingRoute(false);
+      }
+    }, 700);
+
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only re-run when itinerary / destination context changes
+  }, [isPkgModalOpen, pkgForm.itinerary, pkgForm.category, pkgForm.countryId]);
 
   const openPkgLibrary = async () => {
     setIsPkgLibraryOpen(true);
@@ -412,22 +519,29 @@ export default function AdminDashboard() {
       alert('Please upload at least 1 tour photo.');
       return;
     }
+    if (pkgForm.category === 'Outbound' && (!pkgForm.continentId || !pkgForm.countryId)) {
+      alert('Please select a Region and Country so this tour appears on the Destinations page.');
+      return;
+    }
     setIsSaving(true);
     try {
       const method = currentPackage ? 'PUT' : 'POST';
       const url = currentPackage ? `${API_URL}/packages/${currentPackage._id}` : `${API_URL}/packages`;
 
       const isNonEnglish = String(language || 'en').toLowerCase() !== 'en';
+      const destinationFields = pkgForm.category === 'Outbound'
+        ? { continentId: pkgForm.continentId || '', countryId: pkgForm.countryId || '' }
+        : { continentId: '', countryId: '' };
       const makeBucket = (form) => ({
         title: form.title || '',
         description: form.description || '',
         duration: form.duration || '',
         type: form.type || '',
         category: form.category || '',
-        highlights: Array.isArray(form.highlights) ? form.highlights : [],
-        inclusions: Array.isArray(form.inclusions) ? form.inclusions : [],
-        exclusions: Array.isArray(form.exclusions) ? form.exclusions : [],
-        itinerary: Array.isArray(form.itinerary) ? form.itinerary : [],
+        highlights: cleanTextLines(form.highlights),
+        inclusions: cleanTextLines(form.inclusions),
+        exclusions: cleanTextLines(form.exclusions),
+        itinerary: cleanTextLines(form.itinerary),
         seoTitle: form.seoTitle || '',
         seoDescription: form.seoDescription || '',
       });
@@ -451,6 +565,9 @@ export default function AdminDashboard() {
           expiryDate: pkgForm.expiryDate ?? base.expiryDate ?? null,
           gallery,
           image: cover,
+          category: pkgForm.category || base.category || 'Inbound',
+          route: normalizeRoute(pkgForm.route),
+          ...destinationFields,
           // update only the active language bucket
           localizations: {
             ...(existingLocalizations || {}),
@@ -464,8 +581,14 @@ export default function AdminDashboard() {
         // English (or creating a package): save as base, and optionally seed the bucket too.
         payload = {
           ...pkgForm,
+          ...destinationFields,
           gallery,
           image: cover,
+          route: normalizeRoute(pkgForm.route),
+          itinerary: cleanTextLines(pkgForm.itinerary),
+          highlights: cleanTextLines(pkgForm.highlights),
+          inclusions: cleanTextLines(pkgForm.inclusions),
+          exclusions: cleanTextLines(pkgForm.exclusions),
           localizations: isNonEnglish
             ? {
                 ...((currentPackage && typeof currentPackage.localizations === 'object' && currentPackage.localizations) ? currentPackage.localizations : {}),
@@ -756,6 +879,7 @@ export default function AdminDashboard() {
           <NavItem active={activeTab === 'overview'} onClick={() => setActiveTab('overview')} icon={<LayoutDashboard size={20} />} label="Overview" />
           <NavItem active={activeTab === 'bookings'} onClick={() => setActiveTab('bookings')} icon={<Calendar size={20} />} label="Bookings" badge={stats.pendingBookings || null} />
           <NavItem active={activeTab === 'tours'} onClick={() => setActiveTab('tours')} icon={<Briefcase size={20} />} label="Tour Packages" />
+          <NavItem active={activeTab === 'destinations'} onClick={() => setActiveTab('destinations')} icon={<Globe size={20} />} label="Destinations" />
           <NavItem active={activeTab === 'blogs'} onClick={() => setActiveTab('blogs')} icon={<BookOpen size={20} />} label="Blog Posts" />
           <NavItem active={activeTab === 'reviews'} onClick={() => setActiveTab('reviews')} icon={<Star size={20} />} label="Reviews" badge={stats.pendingReviews || null} />
           <NavItem active={activeTab === 'settings'} onClick={() => setActiveTab('settings')} icon={<Settings size={20} />} label="Site Settings" />
@@ -779,6 +903,7 @@ export default function AdminDashboard() {
               {activeTab === 'overview' && 'Overview'}
               {activeTab === 'bookings' && 'Bookings'}
               {activeTab === 'tours' && 'Tour Packages'}
+              {activeTab === 'destinations' && 'Destinations'}
               {activeTab === 'blogs' && 'Blog Posts'}
               {activeTab === 'reviews' && 'Reviews'}
               {activeTab === 'settings' && 'Site Settings'}
@@ -961,6 +1086,13 @@ export default function AdminDashboard() {
                         const displayDuration = localized.duration || p.duration;
                         const displayType = localized.type || p.type;
                         const displayCategory = localized.category || p.category;
+                        const destinationLabel = (() => {
+                          if (displayCategory !== 'Outbound' || !p.countryId) return '';
+                          const continent = destinations.find((c) => c.id === p.continentId);
+                          const country = continent?.countries?.find((c) => c.id === p.countryId);
+                          if (!country) return '';
+                          return continent ? `${continent.name} · ${country.name}` : country.name;
+                        })();
 
                         return (
                           <>
@@ -974,7 +1106,10 @@ export default function AdminDashboard() {
                       </div>
                       <div style={{ padding: '1.25rem' }}>
                         <h3 style={{ fontSize: '1rem', fontWeight: '800', marginBottom: '0.35rem', color: '#0f172a' }}>{displayTitle}</h3>
-                        <p style={{ fontSize: '0.8rem', color: '#64748b', marginBottom: '1rem' }}>{displayDuration} · {displayType}</p>
+                        <p style={{ fontSize: '0.8rem', color: '#64748b', marginBottom: destinationLabel ? '0.35rem' : '1rem' }}>{displayDuration} · {displayType}</p>
+                        {destinationLabel && (
+                          <p style={{ fontSize: '0.75rem', color: '#6366f1', fontWeight: 700, marginBottom: '1rem' }}>{destinationLabel}</p>
+                        )}
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: '1rem', borderTop: '1px solid #f1f5f9' }}>
                           <span style={{ fontSize: '1.35rem', fontWeight: '900', color: '#0f172a' }}>
                             {formatMoney(p.price || 0, 'USD')}
@@ -998,6 +1133,11 @@ export default function AdminDashboard() {
                   )}
                 </div>
               </motion.div>
+            )}
+
+            {/* ── DESTINATIONS ── */}
+            {activeTab === 'destinations' && (
+              <AdminDestinationsTab continents={destinations} onContinentsChange={setDestinations} />
             )}
 
             {/* ── BLOGS ── */}
@@ -1437,12 +1577,55 @@ export default function AdminDashboard() {
               <div className="grid-2">
                 <FormField label="Package Title"><input required className="form-control" value={pkgForm.title} onChange={e => setPkgForm(p => ({ ...p, title: e.target.value }))} placeholder="e.g. Cultural Triangle Experience" /></FormField>
                 <FormField label="Category">
-                  <select className="form-control" value={pkgForm.category} onChange={e => setPkgForm(p => ({ ...p, category: e.target.value }))}>
+                  <select
+                    className="form-control"
+                    value={pkgForm.category}
+                    onChange={e => {
+                      const category = e.target.value;
+                      setPkgForm(p => ({
+                        ...p,
+                        category,
+                        continentId: category === 'Outbound' ? (p.continentId || '') : '',
+                        countryId: category === 'Outbound' ? (p.countryId || '') : '',
+                      }));
+                    }}
+                  >
                     <option value="Inbound">Inbound (Sri Lanka)</option>
                     <option value="Outbound">Outbound (International)</option>
                   </select>
                 </FormField>
               </div>
+              {pkgForm.category === 'Outbound' && (
+                <div className="grid-2">
+                  <FormField label="Region (Destinations)">
+                    <select
+                      required
+                      className="form-control"
+                      value={pkgForm.continentId || ''}
+                      onChange={e => setPkgForm(p => ({ ...p, continentId: e.target.value, countryId: '' }))}
+                    >
+                      <option value="">Select region</option>
+                      {destinations.map((continent) => (
+                        <option key={continent.id} value={continent.id}>{continent.name}</option>
+                      ))}
+                    </select>
+                  </FormField>
+                  <FormField label="Country (Destinations)">
+                    <select
+                      required
+                      className="form-control"
+                      value={pkgForm.countryId || ''}
+                      onChange={e => setPkgForm(p => ({ ...p, countryId: e.target.value }))}
+                      disabled={!pkgForm.continentId}
+                    >
+                      <option value="">{pkgForm.continentId ? 'Select country' : 'Select region first'}</option>
+                      {(destinations.find((c) => c.id === pkgForm.continentId)?.countries || []).map((country) => (
+                        <option key={country.id} value={country.id}>{country.name}</option>
+                      ))}
+                    </select>
+                  </FormField>
+                </div>
+              )}
               <div className="grid-2">
                 <FormField label="Price (USD)"><input required type="number" className="form-control" value={pkgForm.price} onChange={e => setPkgForm(p => ({ ...p, price: Number(e.target.value) }))} /></FormField>
                 <FormField label="Duration"><input required className="form-control" value={pkgForm.duration} onChange={e => setPkgForm(p => ({ ...p, duration: e.target.value }))} placeholder="e.g. 8 Days" /></FormField>
@@ -1658,8 +1841,97 @@ export default function AdminDashboard() {
               <FormField label="Highlights (one per line)">
                 <textarea className="form-control" rows={3} style={{ resize: 'vertical' }} value={(pkgForm.highlights || []).join('\n')} onChange={e => setPkgForm(p => ({ ...p, highlights: e.target.value.split('\n').filter(Boolean) }))} placeholder="Temple of the Tooth Relic&#10;Elephant Safari&#10;Tea Plantation Visit" />
               </FormField>
-              <FormField label="Itinerary (one day/activity per line)">
-                <textarea className="form-control" rows={4} style={{ resize: 'vertical' }} value={(pkgForm.itinerary || []).map((item) => (typeof item === 'string' ? item : (item?.day ? `${item.day}: ${(item.activities || []).join(', ')}` : JSON.stringify(item)))).join('\n')} onChange={e => setPkgForm(p => ({ ...p, itinerary: e.target.value.split('\n').filter(Boolean) }))} placeholder="Day 1: Arrival & city tour&#10;Day 2: Cultural sites visit" />
+              <FormField label="Itinerary (one day per line)">
+                <textarea
+                  className="form-control"
+                  rows={6}
+                  style={{ resize: 'vertical' }}
+                  value={(pkgForm.itinerary || []).map((item) => (typeof item === 'string' ? item : (item?.day ? `${item.day}: ${(item.activities || []).join(', ')}` : JSON.stringify(item)))).join('\n')}
+                  onChange={(e) => setPkgForm((p) => ({ ...p, itinerary: e.target.value.split('\n') }))}
+                  placeholder="Day 1: Colombo&#10;Day 2: Sigiriya&#10;Day 3: Kandy&#10;Day 4: Ella"
+                />
+                <div style={{ marginTop: '0.45rem', fontSize: '0.82rem', color: '#64748b', fontWeight: 600, lineHeight: 1.4 }}>
+                  Press Enter for each new day. Place names update the day-by-day route map automatically.
+                </div>
+              </FormField>
+
+              <FormField label="Day-by-day route map">
+                <div style={{
+                  borderRadius: '0.85rem',
+                  overflow: 'hidden',
+                  border: '1px solid #e2e8f0',
+                  background: '#f8fafc',
+                  minHeight: '240px',
+                }}>
+                  {(pkgForm.route?.stops || []).length > 0 ? (
+                    <MapComponent
+                      key={routeKey(pkgForm.route)}
+                      stops={pkgForm.route.stops}
+                      path={pkgForm.route.path || pkgForm.route.stops}
+                      height="260px"
+                      dayMode
+                    />
+                  ) : (
+                    <div style={{
+                      height: '240px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      padding: '1.25rem',
+                      textAlign: 'center',
+                      color: '#94a3b8',
+                      fontWeight: 700,
+                      fontSize: '0.9rem',
+                    }}>
+                      {isGeocodingRoute
+                        ? 'Locating day places…'
+                        : 'Add Day 1, Day 2, Day 3… with place names to build the route'}
+                    </div>
+                  )}
+                </div>
+                {(pkgForm.route?.stops || []).length > 0 && (
+                  <div style={{
+                    marginTop: '0.75rem',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '0.4rem',
+                  }}>
+                    {pkgForm.route.stops.map((stop, idx) => (
+                      <div
+                        key={`${stop.day}-${stop.label}-${idx}`}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '0.65rem',
+                          fontSize: '0.88rem',
+                          fontWeight: 700,
+                          color: '#334155',
+                        }}
+                      >
+                        <span style={{
+                          width: 22,
+                          height: 22,
+                          borderRadius: '50%',
+                          background: 'hsl(142 76% 36%)',
+                          color: '#fff',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          fontSize: '0.72rem',
+                          flexShrink: 0,
+                        }}>
+                          {stop.day || idx + 1}
+                        </span>
+                        <span>{stop.label || `Day ${idx + 1}`}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {(routeGeoStatus || isGeocodingRoute) && (
+                  <div style={{ marginTop: '0.45rem', fontSize: '0.82rem', color: isGeocodingRoute ? '#0369a1' : '#64748b', fontWeight: 700 }}>
+                    {routeGeoStatus}
+                  </div>
+                )}
               </FormField>
               <div className="grid-2">
                 <FormField label="Inclusions (one per line)">
