@@ -2,53 +2,107 @@ import React, { useEffect, useRef } from 'react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 
-// Fix for default marker icons in standard Leaflet
-import markerIcon from 'leaflet/dist/images/marker-icon.png';
-import markerShadow from 'leaflet/dist/images/marker-shadow.png';
-
-const DefaultIcon = L.icon({
-  iconUrl: markerIcon,
-  shadowUrl: markerShadow,
-  iconSize: [25, 41],
-  iconAnchor: [12, 41],
-});
+function collectCoords(stops = [], path = []) {
+  const source = path.length > 0 ? path : stops;
+  return source
+    .map((p) => [Number(p?.lat), Number(p?.lng)])
+    .filter(([lat, lng]) => Number.isFinite(lat) && Number.isFinite(lng));
+}
 
 export default function MapComponent({ stops = [], path = [], height = '350px', dayMode = false }) {
   const mapRef = useRef(null);
   const mapInstance = useRef(null);
+  const layerGroupRef = useRef(null);
+  const boundsRef = useRef(null);
 
+  const fitToRoute = () => {
+    const map = mapInstance.current;
+    const bounds = boundsRef.current;
+    if (!map || !bounds || !bounds.isValid()) return;
+    map.invalidateSize({ animate: false });
+    map.fitBounds(bounds, {
+      padding: [28, 28],
+      maxZoom: 12,
+      animate: false,
+    });
+  };
+
+  // Create map once; keep container size in sync with popup/modal layout.
   useEffect(() => {
     if (!mapRef.current || mapInstance.current) return;
 
-    const allCoords = path.length > 0 
-      ? path.map(p => [p.lat, p.lng]) 
-      : stops.map(s => [s.lat, s.lng]);
+    const map = L.map(mapRef.current, {
+      scrollWheelZoom: false,
+      zoomControl: true,
+    }).setView([7.8731, 80.7718], 7);
+
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
+    }).addTo(map);
+
+    layerGroupRef.current = L.layerGroup().addTo(map);
+    mapInstance.current = map;
+
+    // Modal/popup often finishes layout after first paint (Framer Motion, scroll, etc.)
+    const t1 = window.setTimeout(fitToRoute, 50);
+    const t2 = window.setTimeout(fitToRoute, 250);
+    const t3 = window.setTimeout(fitToRoute, 500);
+
+    let resizeObserver;
+    if (typeof ResizeObserver !== 'undefined' && mapRef.current) {
+      resizeObserver = new ResizeObserver(() => {
+        fitToRoute();
+      });
+      resizeObserver.observe(mapRef.current);
+    }
+
+    const onWindowResize = () => fitToRoute();
+    window.addEventListener('resize', onWindowResize);
+
+    return () => {
+      window.clearTimeout(t1);
+      window.clearTimeout(t2);
+      window.clearTimeout(t3);
+      window.removeEventListener('resize', onWindowResize);
+      resizeObserver?.disconnect();
+      if (mapInstance.current) {
+        mapInstance.current.remove();
+        mapInstance.current = null;
+      }
+      layerGroupRef.current = null;
+      boundsRef.current = null;
+    };
+  }, []);
+
+  // Draw route + fit all stops inside the visible popup map area.
+  useEffect(() => {
+    const map = mapInstance.current;
+    const group = layerGroupRef.current;
+    if (!map || !group) return;
+
+    const allCoords = collectCoords(stops, path);
+    group.clearLayers();
+    boundsRef.current = null;
 
     if (allCoords.length === 0) return;
 
-    // Initialize Map
-    mapInstance.current = L.map(mapRef.current, {
-      scrollWheelZoom: false,
-      zoomControl: true,
-    }).setView(allCoords[0], 13);
-
-    // Add Tile Layer (CartoDB Voyager)
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
-      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
-    }).addTo(mapInstance.current);
-
-    // Add Path
     if (path.length > 1) {
-      L.polyline(path.map(p => [p.lat, p.lng]), {
-        color: 'hsl(142, 76%, 36%)',
-        weight: 4,
-        opacity: 0.8,
-        dashArray: '10, 10'
-      }).addTo(mapInstance.current);
+      const pathCoords = collectCoords([], path);
+      if (pathCoords.length > 1) {
+        L.polyline(pathCoords, {
+          color: 'hsl(142, 76%, 36%)',
+          weight: 4,
+          opacity: 0.8,
+          dashArray: '10, 10',
+        }).addTo(group);
+      }
     }
 
-    // Add Markers (day number when available)
     stops.forEach((stop, idx) => {
+      const lat = Number(stop?.lat);
+      const lng = Number(stop?.lng);
+      if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
+
       const markerNum = dayMode && stop.day ? stop.day : idx + 1;
       const customIcon = L.divIcon({
         className: 'custom-numbered-marker',
@@ -70,35 +124,33 @@ export default function MapComponent({ stops = [], path = [], height = '350px', 
         iconAnchor: [13, 13],
       });
 
-      L.marker([stop.lat, stop.lng], { icon: customIcon })
-        .addTo(mapInstance.current)
+      L.marker([lat, lng], { icon: customIcon })
+        .addTo(group)
         .bindPopup(`<b>${stop.label || (dayMode ? `Day ${markerNum}` : `Stop ${idx + 1}`)}</b>`);
     });
 
-    // Fit Bounds
-    const bounds = L.latLngBounds(allCoords);
-    mapInstance.current.fitBounds(bounds, { padding: [40, 40] });
+    boundsRef.current = L.latLngBounds(allCoords);
+    fitToRoute();
+    const t1 = window.setTimeout(fitToRoute, 80);
+    const t2 = window.setTimeout(fitToRoute, 320);
 
-    // Cleanup
     return () => {
-      if (mapInstance.current) {
-        mapInstance.current.remove();
-        mapInstance.current = null;
-      }
+      window.clearTimeout(t1);
+      window.clearTimeout(t2);
     };
   }, [stops, path, dayMode]);
 
   return (
-    <div 
-      ref={mapRef} 
-      style={{ 
-        height, 
-        width: '100%', 
-        borderRadius: '1.5rem', 
+    <div
+      ref={mapRef}
+      style={{
+        height,
+        width: '100%',
+        borderRadius: '1.5rem',
         overflow: 'hidden',
         border: '1px solid hsl(var(--primary) / 0.1)',
-        zIndex: 1
-      }} 
+        zIndex: 1,
+      }}
     />
   );
 }

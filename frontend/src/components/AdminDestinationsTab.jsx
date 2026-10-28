@@ -4,6 +4,26 @@ import { Plus, Pencil, Trash2, Image, MapPin, Globe, Sparkles, ChevronUp, Chevro
 import API_URL, { mediaUrl } from '../config';
 import { OUTBOUND_CONTINENTS, mergeContinentsWithFallback } from '../data/outbound-regions';
 
+function clearAdminSession() {
+  localStorage.removeItem('admin_session');
+  localStorage.removeItem('admin_token');
+}
+
+function isJwtExpired(token) {
+  if (!token || typeof token !== 'string') return true;
+  const parts = token.split('.');
+  if (parts.length !== 3) return true;
+  try {
+    let b64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+    while (b64.length % 4) b64 += '=';
+    const payload = JSON.parse(atob(b64));
+    if (!payload || typeof payload.exp !== 'number') return false;
+    return payload.exp * 1000 <= Date.now() + 30_000;
+  } catch {
+    return true;
+  }
+}
+
 function authHeaders() {
   const token = localStorage.getItem('admin_token');
   return { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) };
@@ -13,6 +33,10 @@ async function apiFetch(url, options = {}) {
   const res = await fetch(url, { ...options, headers: { ...authHeaders(), ...options.headers } });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
+    if (res.status === 401) {
+      clearAdminSession();
+      throw new Error('Session expired. Please log in again.');
+    }
     throw new Error(err.message || `Request failed: ${res.status}`);
   }
   return res.json();
@@ -20,16 +44,27 @@ async function apiFetch(url, options = {}) {
 
 async function uploadAdminImage(file) {
   const token = localStorage.getItem('admin_token');
+  if (!token || isJwtExpired(token)) {
+    clearAdminSession();
+    throw new Error('Session expired. Please log in again.');
+  }
+  if (file?.size > 8 * 1024 * 1024) {
+    throw new Error('Image must be 8MB or smaller.');
+  }
   const body = new FormData();
   body.append('image', file);
-  if (token) body.append('admin_token', token);
+  body.append('admin_token', token);
   const res = await fetch(`${API_URL}/upload`, {
     method: 'POST',
-    headers: token ? { Authorization: `Bearer ${token}`, 'X-Admin-Token': token } : {},
+    headers: { Authorization: `Bearer ${token}`, 'X-Admin-Token': token },
     body,
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
+    if (res.status === 401) {
+      clearAdminSession();
+      throw new Error('Session expired. Please log in again.');
+    }
     throw new Error(err.message || `Upload failed: ${res.status}`);
   }
   return res.json();

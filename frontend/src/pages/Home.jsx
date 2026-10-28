@@ -1,26 +1,23 @@
-import React, { useState } from 'react';
+import React from 'react';
+import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import SEO from '../components/SEO';
 import HeroCarousel from '../components/HeroCarousel';
+import HomeTourSearch from '../components/HomeTourSearch';
 import Hero from '../components/Hero';
 import AboutUs from '../components/AboutUs';
 import LimitedTimeTours from '../components/LimitedTimeTours';
-import TourModal from '../components/TourModal';
+import ReviewCarousel from '../components/ReviewCarousel';
 import { useSite } from '../context/SiteContext';
 
 export default function Home() {
-  const [selectedTour, setSelectedTour] = useState(null);
-  const [tourOpen, setTourOpen] = useState(false);
+  const navigate = useNavigate();
   const { t } = useSite();
 
   const openTour = (tour) => {
-    setSelectedTour(tour);
-    setTourOpen(true);
-  };
-
-  const closeTour = () => {
-    setTourOpen(false);
-    setSelectedTour(null);
+    const id = tour?._id ?? tour?.id;
+    if (!id) return;
+    navigate(`/tours/${id}`);
   };
 
   return (
@@ -32,6 +29,7 @@ export default function Home() {
 
       <section>
         <HeroCarousel />
+        <HomeTourSearch onOpenTour={openTour} />
       </section>
 
       <LimitedTimeTours onOpenTour={openTour} />
@@ -78,12 +76,8 @@ export default function Home() {
           <AboutUs />
         </div>
       </section>
-      
-      <TourModal 
-        isOpen={tourOpen} 
-        onClose={closeTour} 
-        tour={selectedTour} 
-      />
+
+      <ReviewCarousel />
     </main>
   );
 }

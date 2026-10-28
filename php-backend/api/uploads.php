@@ -1,6 +1,7 @@
 <?php
 // php-backend/api/uploads.php — admin-only list uploaded images
 require_once __DIR__ . '/../utils/cors.php';
+require_once __DIR__ . '/../config/db.php';
 require_once __DIR__ . '/../utils/auth.php';
 
 handleCors();
@@ -15,7 +16,7 @@ requireAdmin();
 $type = $_GET['type'] ?? 'packages';
 $type = is_string($type) ? strtolower(trim($type)) : 'packages';
 
-$allowedTypes = ['packages'];
+$allowedTypes = ['packages', 'reviews'];
 if (!in_array($type, $allowedTypes, true)) {
     sendResponse(['message' => 'Invalid type'], 400);
 }

@@ -6,10 +6,18 @@ import { useSite } from '../context/SiteContext';
 import { getLocalizationBucket } from '../utils/localization';
 import { getPackageLocalizationFallback } from '../utils/packageLocalizationFallback';
 import { formatMoney } from '../utils/money';
+import { normalizeItineraryDays } from './ItineraryTimeline';
 
 function extractDays(duration) {
   const match = String(duration || '').match(/(\d+)/);
   return match ? match[1] : '—';
+}
+
+function daysFromPackage(pkg, localized) {
+  const itinerary = localized?.itinerary ?? pkg?.itinerary;
+  const dayCount = normalizeItineraryDays(Array.isArray(itinerary) ? itinerary : []).length;
+  if (dayCount > 0) return String(dayCount);
+  return extractDays(pkg?.duration);
 }
 
 /** Flat tour card matching Bunnik-style country gallery. */
@@ -20,10 +28,10 @@ export default function CountryTourCard({ pkg, onViewDetails }) {
     ...getLocalizationBucket(pkg, language),
   };
   const title = localized.title || pkg.title;
-  const days = extractDays(pkg.duration);
+  const days = daysFromPackage(pkg, localized);
   const priceLabel =
     Number(pkg.price) > 0
-      ? formatMoney(pkg.price, currency, { usdToLkrRate })
+      ? formatMoney(pkg.price, currency, { usdToLkrRate, fromCurrency: pkg.currency })
       : t.uiContactForPrice || 'Contact us';
 
   return (
@@ -120,7 +128,7 @@ export default function CountryTourCard({ pkg, onViewDetails }) {
                   letterSpacing: '0.04em',
                 }}
               >
-                {t.uiFrom || 'From'}
+                {t.uiFrom || 'STARTING FROM'}
               </div>
               <div
                 style={{

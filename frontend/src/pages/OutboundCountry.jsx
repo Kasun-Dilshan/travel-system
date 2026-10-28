@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Link, Navigate, useParams } from 'react-router-dom';
+import { Link, Navigate, useNavigate, useParams } from 'react-router-dom';
 import {
   Building2,
   Languages,
@@ -10,7 +10,6 @@ import {
   Sparkles,
   Globe2,
 } from 'lucide-react';
-import TourModal from '../components/TourModal';
 import CountryTourCard from '../components/CountryTourCard';
 import CountryHighlights from '../components/CountryHighlights';
 import SEO from '../components/SEO';
@@ -43,13 +42,12 @@ function tipIcon(label) {
 
 export default function OutboundCountry() {
   const { continentId, countryId } = useParams();
+  const navigate = useNavigate();
   const { language, t } = useSite();
   const { continents, isLoading: destinationsLoading } = useOutboundContinents();
   const { continent, country } = getCountryById(continentId, countryId, continents);
 
   const [packages, setPackages] = useState([]);
-  const [selectedTour, setSelectedTour] = useState(null);
-  const [tourOpen, setTourOpen] = useState(false);
   const [activeSection, setActiveSection] = useState('overview');
   const [isNarrow, setIsNarrow] = useState(() =>
     typeof window !== 'undefined' ? window.innerWidth < 768 : false
@@ -112,15 +110,16 @@ export default function OutboundCountry() {
     return filterPackagesByCountry(merged, country, continent?.id);
   }, [packages, country, continent]);
 
-  if (destinationsLoading) {
-    return (
-      <div style={{ minHeight: '50vh', display: 'grid', placeItems: 'center', color: '#64748b' }}>
-        Loading destination…
-      </div>
-    );
-  }
-
+  // Fallback continents are available immediately; only wait when this
+  // country is not in the current catalog (e.g. admin-added, still fetching).
   if (!continent || !country) {
+    if (destinationsLoading) {
+      return (
+        <div style={{ minHeight: '50vh', display: 'grid', placeItems: 'center', color: '#64748b' }}>
+          Loading destination…
+        </div>
+      );
+    }
     return <Navigate to="/outbound/destinations" replace />;
   }
 
@@ -129,21 +128,22 @@ export default function OutboundCountry() {
     localizedCountry?.fullDescription ||
     localizedCountry?.description ||
     country.fullDescription;
-  const tips =
-    (localizedCountry?.tips?.length && localizedCountry.tips) ||
-    country.tips ||
-    localizedCountry?.facts ||
-    country.facts ||
-    [];
+  const tips = [
+    localizedCountry?.tips,
+    country.tips,
+    localizedCountry?.facts,
+    country.facts,
+  ].find((list) => Array.isArray(list) && list.length > 0) || [];
 
-  const highlights =
-    (localizedCountry?.highlights?.length && localizedCountry.highlights) ||
-    country.highlights ||
-    [];
+  const highlights = [
+    localizedCountry?.highlights,
+    country.highlights,
+  ].find((list) => Array.isArray(list) && list.length > 0) || [];
 
   const openTour = (tour) => {
-    setSelectedTour(tour);
-    setTourOpen(true);
+    const id = tour?._id ?? tour?.id;
+    if (!id) return;
+    navigate(`/tours/${id}`);
   };
 
   const scrollTo = (id) => {
@@ -380,17 +380,6 @@ export default function OutboundCountry() {
             scrollMarginTop: 72,
           }}
         >
-          <h2
-            style={{
-              margin: '0 0 clamp(1.5rem, 3vw, 2.25rem)',
-              fontSize: 'clamp(1.65rem, 3.5vw, 2.35rem)',
-              fontWeight: 800,
-              color: 'hsl(var(--secondary))',
-            }}
-          >
-            {t.outboundSmallGroupTours || 'Small Group Tours'}
-          </h2>
-
           {countryTours.length > 0 ? (
             <>
               <div
@@ -538,15 +527,6 @@ export default function OutboundCountry() {
           </div>
         </section>
       </div>
-
-      <TourModal
-        isOpen={tourOpen}
-        onClose={() => {
-          setTourOpen(false);
-          setSelectedTour(null);
-        }}
-        tour={selectedTour}
-      />
     </main>
   );
 }

@@ -1,4 +1,8 @@
 node_modules
 .env
 php-backend/.env
-php-backend/uploads/
+# Keep upload folder structure in git; ignore actual image files.
+php-backend/uploads/**
+!php-backend/uploads/.htaccess
+!php-backend/uploads/packages/
+!php-backend/uploads/packages/.gitkeep

@@ -6,6 +6,7 @@ import SEO from '../components/SEO';
 import API_URL, { mediaUrl } from '../config';
 import { useSite } from '../context/SiteContext';
 import { formatMoney } from '../utils/money';
+import FindTours from './FindTours';
 
 export default function BookingPage() {
   const location = useLocation();
@@ -26,14 +27,9 @@ export default function BookingPage() {
   const [isSuccess, setIsSuccess] = useState(false);
   const [error, setError] = useState(null);
 
+  // Find Tours tab: country search when no tour is selected yet
   if (!tour) {
-    return (
-      <div className="container" style={{ padding: '3rem 2rem', textAlign: 'center' }}>
-        <SEO title="No Tour Selected" description="Please select a tour to proceed with booking." />
-        <h2 style={{ fontSize: '2rem', marginBottom: '1rem' }}>No Tour Selected</h2>
-        <button onClick={() => navigate('/')} className="btn btn-primary">Go Home</button>
-      </div>
-    );
+    return <FindTours />;
   }
 
   const handleChange = (e) => {
@@ -205,7 +201,7 @@ export default function BookingPage() {
                 fontSize: '0.8rem',
                 backdropFilter: 'blur(4px)'
               }}>
-                {formatMoney(tour.price, currency, { usdToLkrRate })}{' '}
+                {formatMoney(tour.price, currency, { usdToLkrRate, fromCurrency: tour.currency })}{' '}
                 <span style={{ opacity: 0.7 }}>/ person</span>
               </div>
             </div>
@@ -215,7 +211,7 @@ export default function BookingPage() {
             <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', fontSize: '0.95rem' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', opacity: 0.6 }}>
                 <span>Subtotal</span>
-                  <span>{formatMoney(tour.price, currency, { usdToLkrRate })} &times; {formData.guests}</span>
+                  <span>{formatMoney(tour.price, currency, { usdToLkrRate, fromCurrency: tour.currency })} &times; {formData.guests}</span>
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between', opacity: 0.6 }}>
                 <span>Service Fee</span>
@@ -232,7 +228,7 @@ export default function BookingPage() {
               }}>
                 <span style={{ fontWeight: '700', color: 'hsl(var(--secondary))' }}>Total Amount</span>
                 <span style={{ fontSize: '1.75rem', fontWeight: '900', color: 'hsl(var(--primary))' }}>
-                  {formatMoney(tour.price * formData.guests, currency, { usdToLkrRate })}
+                  {formatMoney(tour.price * formData.guests, currency, { usdToLkrRate, fromCurrency: tour.currency })}
                 </span>
               </div>
             </div>

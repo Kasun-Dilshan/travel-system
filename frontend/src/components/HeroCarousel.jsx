@@ -248,7 +248,7 @@ export default function HeroCarousel() {
         className="hero-carousel-controls"
         style={{
         position: 'absolute',
-        bottom: 'max(6%, env(safe-area-inset-bottom, 0px))',
+        bottom: 'max(5.25rem, calc(env(safe-area-inset-bottom, 0px) + 4.75rem))',
         left: 'max(1rem, 8%)',
         right: 'max(1rem, 8%)',
         zIndex: 10,
@@ -303,7 +303,7 @@ export default function HeroCarousel() {
           .hero-carousel-controls {
             flex-direction: column-reverse;
             align-items: stretch !important;
-            bottom: max(1rem, env(safe-area-inset-bottom, 0px)) !important;
+            bottom: max(4.75rem, calc(env(safe-area-inset-bottom, 0px) + 4.25rem)) !important;
           }
           .hero-carousel-controls > div:last-child {
             justify-content: center;

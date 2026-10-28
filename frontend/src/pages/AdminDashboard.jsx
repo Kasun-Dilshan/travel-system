@@ -8,7 +8,13 @@ import { getPackageLocalizationFallback } from '../utils/packageLocalizationFall
 import { useSite } from '../context/SiteContext';
 import { RevenueChart, CategoryDistribution } from '../components/DashboardCharts';
 import { formatMoney } from '../utils/money';
-import { buildRouteFromItinerary, extractDayStopsFromItinerary, routeKey, cleanTextLines } from '../utils/geocodeRoute';
+import { isTruthyFlag } from '../utils/flags';
+import { buildRouteFromLocations, routeKey, cleanTextLines } from '../utils/geocodeRoute';
+import {
+  formatDayLabel,
+  serializeItineraryDays,
+  toEditableItineraryDays,
+} from '../components/ItineraryTimeline';
 import {
   Users, Calendar, Phone, Mail, MapPin, Trash2,
   CheckCircle2, X, Clock, Search, AlertCircle,
@@ -18,6 +24,7 @@ import {
   ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Eye, EyeOff, Star, Tag, FileText
 } from 'lucide-react';
 import { OUTBOUND_CONTINENTS, mergeContinentsWithFallback } from '../data/outbound-regions';
+import { INBOUND_REGIONS } from '../data/inbound-regions';
 import AdminDestinationsTab from '../components/AdminDestinationsTab';
 
 function countryCodeForPackage(form) {
@@ -33,6 +40,27 @@ function countryCodeForPackage(form) {
 }
 
 // ─── Helpers ───────────────────────────────────────────────────────────────
+function clearAdminSession() {
+  localStorage.removeItem('admin_session');
+  localStorage.removeItem('admin_token');
+}
+
+function isJwtExpired(token) {
+  if (!token || typeof token !== 'string') return true;
+  const parts = token.split('.');
+  if (parts.length !== 3) return true;
+  try {
+    let b64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+    while (b64.length % 4) b64 += '=';
+    const payload = JSON.parse(atob(b64));
+    if (!payload || typeof payload.exp !== 'number') return false;
+    // 30s skew so we re-login before the server rejects.
+    return payload.exp * 1000 <= Date.now() + 30_000;
+  } catch {
+    return true;
+  }
+}
+
 function authHeaders() {
   const token = localStorage.getItem('admin_token');
   return { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) };
@@ -42,6 +70,10 @@ async function apiFetch(url, options = {}) {
   const res = await fetch(url, { ...options, headers: { ...authHeaders(), ...options.headers } });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
+    if (res.status === 401) {
+      clearAdminSession();
+      throw new Error('Session expired. Please log in again.');
+    }
     throw new Error(err.message || `Request failed: ${res.status}`);
   }
   return res.json();
@@ -59,25 +91,41 @@ function pickLocalizedArray(localizedVal, baseVal) {
   return [];
 }
 
-async function uploadAdminImage(file) {
+/** Split highlights into one point each (newlines / commas). */
+function normalizeHighlightPoints(list) {
+  return (Array.isArray(list) ? list : [list])
+    .flatMap((item) => String(item ?? '').split(/[\n,]+/))
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
+async function uploadAdminImage(file, type = 'packages') {
   const token = localStorage.getItem('admin_token');
+  if (!token || isJwtExpired(token)) {
+    clearAdminSession();
+    throw new Error('Session expired. Please log in again.');
+  }
+  if (file?.size > 8 * 1024 * 1024) {
+    throw new Error('Image must be 8MB or smaller.');
+  }
   const body = new FormData();
   body.append('image', file);
-  if (token) {
-    body.append('admin_token', token);
-  }
+  body.append('admin_token', token);
+  body.append('type', type);
   const res = await fetch(`${API_URL}/upload`, {
     method: 'POST',
-    headers: token
-      ? {
-          Authorization: `Bearer ${token}`,
-          'X-Admin-Token': token,
-        }
-      : {},
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'X-Admin-Token': token,
+    },
     body,
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
+    if (res.status === 401) {
+      clearAdminSession();
+      throw new Error('Session expired. Please log in again.');
+    }
     throw new Error(err.message || `Upload failed: ${res.status}`);
   }
   return res.json();
@@ -87,7 +135,13 @@ async function uploadAdminImage(file) {
 export default function AdminDashboard() {
   const { language } = useSite();
   const [isLoggedIn, setIsLoggedIn] = useState(() => {
-    return localStorage.getItem('admin_session') === 'active' && !!localStorage.getItem('admin_token');
+    const token = localStorage.getItem('admin_token');
+    const active = localStorage.getItem('admin_session') === 'active' && !!token;
+    if (active && isJwtExpired(token)) {
+      clearAdminSession();
+      return false;
+    }
+    return active;
   });
   const [activeTab, setActiveTab] = useState('overview');
   const [bookings, setBookings] = useState([]);
@@ -104,6 +158,15 @@ export default function AdminDashboard() {
   const [bookingFilter, setBookingFilter] = useState('all');
   const [reviewFilter, setReviewFilter] = useState('pending');
 
+  // Review modal
+  const emptyReview = { name: '', location: '', rating: 5, text: '', status: 'pending', photos: [] };
+  const [isReviewModalOpen, setIsReviewModalOpen] = useState(false);
+  const [currentReview, setCurrentReview] = useState(null);
+  const [reviewForm, setReviewForm] = useState(emptyReview);
+  const [isSavingReview, setIsSavingReview] = useState(false);
+  const [isUploadingReviewPhoto, setIsUploadingReviewPhoto] = useState(false);
+  const [reviewPreviewIndex, setReviewPreviewIndex] = useState(0);
+
   // Package modal
   const [isPkgModalOpen, setIsPkgModalOpen] = useState(false);
   const [currentPackage, setCurrentPackage] = useState(null);
@@ -115,8 +178,10 @@ export default function AdminDashboard() {
   const [pkgLibraryFiles, setPkgLibraryFiles] = useState([]);
   const [isLoadingPkgLibrary, setIsLoadingPkgLibrary] = useState(false);
   const [pkgLibraryError, setPkgLibraryError] = useState('');
-  const emptyPkg = { title: '', price: 0, image: '', gallery: [], duration: '', description: '', category: 'Inbound', continentId: '', countryId: '', type: 'Round', inclusions: [], exclusions: [], highlights: [], itinerary: [], route: { stops: [], path: [] }, featured: false, isHot: false, isLimitedTime: false, discountPercentage: 0, seoTitle: '', seoDescription: '' };
+  const emptyPkg = { title: '', price: 0, currency: 'USD', image: '', gallery: [], duration: '', description: '', category: 'Inbound', continentId: '', countryId: '', inboundRegionId: '', destinationId: '', type: 'Round', inclusions: [], exclusions: [], highlights: [], itinerary: [], routeLocations: [], route: { stops: [], path: [], locations: [] }, featured: false, isHot: false, isLimitedTime: false, discountPercentage: 0, seoTitle: '', seoDescription: '' };
   const [pkgForm, setPkgForm] = useState(emptyPkg);
+  const [pkgHighlightInput, setPkgHighlightInput] = useState('');
+  const [pkgRouteLocationInput, setPkgRouteLocationInput] = useState('');
   const [pkgBaseSnapshot, setPkgBaseSnapshot] = useState(null);
   const [isGeocodingRoute, setIsGeocodingRoute] = useState(false);
   const [routeGeoStatus, setRouteGeoStatus] = useState('');
@@ -209,9 +274,25 @@ export default function AdminDashboard() {
 
   const handleLogout = () => {
     setIsLoggedIn(false);
-    localStorage.removeItem('admin_session');
-    localStorage.removeItem('admin_token');
+    clearAdminSession();
   };
+
+  // If any admin API clears the session (401), bounce back to the login screen.
+  useEffect(() => {
+    if (!isLoggedIn) return undefined;
+    const onStorage = () => {
+      const token = localStorage.getItem('admin_token');
+      if (!token || localStorage.getItem('admin_session') !== 'active' || isJwtExpired(token)) {
+        setIsLoggedIn(false);
+      }
+    };
+    window.addEventListener('storage', onStorage);
+    const id = window.setInterval(onStorage, 5000);
+    return () => {
+      window.removeEventListener('storage', onStorage);
+      window.clearInterval(id);
+    };
+  }, [isLoggedIn]);
 
   // ── Data Fetch ────────────────────────────────────────────────────────────
   const fetchData = useCallback(async () => {
@@ -303,13 +384,31 @@ export default function AdminDashboard() {
   };
 
   // ── Packages ──────────────────────────────────────────────────────────────
-  const normalizeRoute = (route) => {
-    if (!route || typeof route !== 'object') return { stops: [], path: [] };
+  const normalizeRoute = (route, locationsOverride) => {
+    if (!route || typeof route !== 'object') {
+      return { stops: [], path: [], locations: cleanTextLines(locationsOverride) };
+    }
     const stops = Array.isArray(route.stops) ? route.stops.filter((s) => Number.isFinite(Number(s?.lat)) && Number.isFinite(Number(s?.lng))) : [];
     const path = Array.isArray(route.path) && route.path.length
       ? route.path.filter((p) => Number.isFinite(Number(p?.lat)) && Number.isFinite(Number(p?.lng)))
       : stops.map((s) => ({ lat: s.lat, lng: s.lng }));
-    return { stops, path };
+    const locations = locationsOverride !== undefined
+      ? cleanTextLines(locationsOverride)
+      : cleanTextLines(
+        Array.isArray(route.locations) && route.locations.length
+          ? route.locations
+          : stops.map((s) => s.place || String(s.label || '').replace(/^\s*day\s*\d+\s*:\s*/i, '')),
+      );
+    return { stops, path, locations };
+  };
+
+  const extractRouteLocations = (pkg) => {
+    const fromRoute = Array.isArray(pkg?.route?.locations) ? pkg.route.locations : [];
+    if (fromRoute.length) return cleanTextLines(fromRoute);
+    const fromStops = Array.isArray(pkg?.route?.stops)
+      ? pkg.route.stops.map((s) => s.place || String(s.label || '').replace(/^\s*day\s*\d+\s*:\s*/i, ''))
+      : [];
+    return cleanTextLines(fromStops);
   };
 
   const handleOpenPkgModal = (pkg = null) => {
@@ -321,7 +420,8 @@ export default function AdminDashboard() {
     setIsGeocodingRoute(false);
     routeGenRef.current += 1;
 
-    const existingRoute = normalizeRoute(pkg?.route);
+    const routeLocations = extractRouteLocations(pkg);
+    const existingRoute = normalizeRoute(pkg?.route, routeLocations);
 
     // Keep an immutable snapshot of the base (English/source) fields so that
     // saving while viewing a different language only updates `localizations[lang]`
@@ -329,6 +429,7 @@ export default function AdminDashboard() {
     setPkgBaseSnapshot(pkg ? {
       title: pkg.title || '',
       price: pkg.price || 0,
+      currency: pkg.currency === 'LKR' ? 'LKR' : 'USD',
       image: pkg.image || '',
       gallery: pkg.gallery || pkg.images || [],
       duration: pkg.duration || '',
@@ -336,15 +437,18 @@ export default function AdminDashboard() {
       category: pkg.category || 'Inbound',
       continentId: pkg.continentId || '',
       countryId: pkg.countryId || '',
+      inboundRegionId: pkg.inboundRegionId || '',
+      destinationId: pkg.destinationId || '',
       type: pkg.type || 'Round',
       inclusions: Array.isArray(pkg.inclusions) ? pkg.inclusions : [],
       exclusions: Array.isArray(pkg.exclusions) ? pkg.exclusions : [],
-      highlights: Array.isArray(pkg.highlights) ? pkg.highlights : [],
-      itinerary: Array.isArray(pkg.itinerary) ? pkg.itinerary : [],
+      highlights: normalizeHighlightPoints(pkg.highlights),
+      itinerary: toEditableItineraryDays(Array.isArray(pkg.itinerary) ? pkg.itinerary : []),
+      routeLocations,
       route: existingRoute,
-      featured: !!pkg.featured,
-      isHot: !!pkg.isHot,
-      isLimitedTime: !!pkg.isLimitedTime,
+      featured: isTruthyFlag(pkg.featured),
+      isHot: isTruthyFlag(pkg.isHot),
+      isLimitedTime: isTruthyFlag(pkg.isLimitedTime),
       discountPercentage: pkg.discountPercentage || 0,
       seoTitle: pkg.seoTitle || '',
       seoDescription: pkg.seoDescription || '',
@@ -361,6 +465,7 @@ export default function AdminDashboard() {
     setPkgForm(pkg ? {
       title: pickLocalizedField(localized.title, pkg.title),
       price: pkg.price || 0,
+      currency: pkg.currency === 'LKR' ? 'LKR' : 'USD',
       image: pkg.image || '',
       gallery: pkg.gallery || pkg.images || [],
       duration: pickLocalizedField(localized.duration, pkg.duration),
@@ -368,67 +473,66 @@ export default function AdminDashboard() {
       category: pickLocalizedField(localized.category, pkg.category) || 'Inbound',
       continentId: pkg.continentId || '',
       countryId: pkg.countryId || '',
+      inboundRegionId: pkg.inboundRegionId || '',
+      destinationId: pkg.destinationId || '',
       type: pickLocalizedField(localized.type, pkg.type) || 'Round',
       inclusions: pickLocalizedArray(localized.inclusions, pkg.inclusions),
       exclusions: pickLocalizedArray(localized.exclusions, pkg.exclusions),
-      highlights: pickLocalizedArray(localized.highlights, pkg.highlights),
-      itinerary: pickLocalizedArray(localized.itinerary, pkg.itinerary),
+      highlights: normalizeHighlightPoints(pickLocalizedArray(localized.highlights, pkg.highlights)),
+      itinerary: toEditableItineraryDays(pickLocalizedArray(localized.itinerary, pkg.itinerary)),
+      routeLocations,
       route: existingRoute,
-      featured: pkg.featured || false,
-      isHot: pkg.isHot || false,
-      isLimitedTime: pkg.isLimitedTime || false,
+      featured: isTruthyFlag(pkg.featured),
+      isHot: isTruthyFlag(pkg.isHot),
+      isLimitedTime: isTruthyFlag(pkg.isLimitedTime),
       discountPercentage: pkg.discountPercentage || 0,
       seoTitle: pickLocalizedField(localized.seoTitle, pkg.seoTitle),
       seoDescription: pickLocalizedField(localized.seoDescription, pkg.seoDescription),
     } : emptyPkg);
+    setPkgHighlightInput('');
+    setPkgRouteLocationInput('');
     setIsPkgModalOpen(true);
   };
 
-  // Auto-generate day-by-day tour route whenever itinerary place names change
+  // Geocode route map from explicit location inputs (not itinerary text)
   useEffect(() => {
     if (!isPkgModalOpen) return;
 
-    const itinerary = Array.isArray(pkgForm.itinerary) ? pkgForm.itinerary : [];
-    const dayStops = extractDayStopsFromItinerary(itinerary);
-    const labelsKey = dayStops.map((s) => s.label).join('|').toLowerCase();
-    const hasAnyText = itinerary.some((line) => String(line ?? '').trim());
+    const locations = cleanTextLines(pkgForm.routeLocations);
+    const labelsKey = locations.join('|').toLowerCase();
 
-    if (!dayStops.length) {
-      if (!hasAnyText) {
-        setPkgForm((p) => {
-          const current = normalizeRoute(p.route);
-          if (!current.stops.length) return p;
-          return { ...p, route: { stops: [], path: [] } };
-        });
-        setRouteGeoStatus('');
-      } else {
-        setRouteGeoStatus('Add place names (e.g. Day 1: Sigiriya) — press Enter for the next day');
-      }
+    if (!locations.length) {
+      setPkgForm((p) => {
+        const current = normalizeRoute(p.route, []);
+        if (!current.stops.length && !(current.locations || []).length) return p;
+        return { ...p, route: { stops: [], path: [], locations: [] } };
+      });
+      setRouteGeoStatus('');
       setIsGeocodingRoute(false);
       return;
     }
 
-    const currentStops = normalizeRoute(pkgForm.route).stops;
-    const currentLabelsKey = currentStops.map((s) => String(s.label || '').trim()).join('|').toLowerCase();
-    if (labelsKey === currentLabelsKey && currentStops.length === dayStops.length) {
-      setRouteGeoStatus(`${currentStops.length} day${currentStops.length === 1 ? '' : 's'} on map`);
+    const currentStops = normalizeRoute(pkgForm.route, locations).stops;
+    const currentPlacesKey = currentStops.map((s) => String(s.place || '').trim()).join('|').toLowerCase();
+    if (labelsKey === currentPlacesKey && currentStops.length === locations.length) {
+      setRouteGeoStatus(`${currentStops.length} location${currentStops.length === 1 ? '' : 's'} on map`);
       return;
     }
 
     const gen = ++routeGenRef.current;
     const timer = setTimeout(async () => {
       setIsGeocodingRoute(true);
-      setRouteGeoStatus('Finding day locations on map…');
+      setRouteGeoStatus('Finding locations on map…');
       try {
-        const route = await buildRouteFromItinerary(itinerary, {
+        const route = await buildRouteFromLocations(locations, {
           countryCode: countryCodeForPackage(pkgForm),
         });
         if (gen !== routeGenRef.current) return;
-        setPkgForm((p) => ({ ...p, route }));
+        setPkgForm((p) => ({ ...p, route: normalizeRoute(route, locations) }));
         if (route.stops.length) {
-          setRouteGeoStatus(`${route.stops.length} of ${dayStops.length} day${dayStops.length === 1 ? '' : 's'} plotted`);
+          setRouteGeoStatus(`${route.stops.length} of ${locations.length} location${locations.length === 1 ? '' : 's'} plotted`);
         } else {
-          setRouteGeoStatus('No places found — use clear place names (e.g. Day 1: Sigiriya)');
+          setRouteGeoStatus('No places found — try clearer place names (e.g. Kuala Lumpur)');
         }
       } catch {
         if (gen !== routeGenRef.current) return;
@@ -439,8 +543,8 @@ export default function AdminDashboard() {
     }, 700);
 
     return () => clearTimeout(timer);
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- only re-run when itinerary / destination context changes
-  }, [isPkgModalOpen, pkgForm.itinerary, pkgForm.category, pkgForm.countryId]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only re-run when route locations / destination context changes
+  }, [isPkgModalOpen, pkgForm.routeLocations, pkgForm.category, pkgForm.countryId]);
 
   const openPkgLibrary = async () => {
     setIsPkgLibraryOpen(true);
@@ -505,7 +609,9 @@ export default function AdminDashboard() {
         };
       });
     } catch (err) {
-      alert(err.message || 'Upload failed');
+      const msg = err.message || 'Upload failed';
+      alert(msg);
+      if (/session expired/i.test(msg)) setIsLoggedIn(false);
     } finally {
       setIsUploadingCover(false);
     }
@@ -523,6 +629,10 @@ export default function AdminDashboard() {
       alert('Please select a Region and Country so this tour appears on the Destinations page.');
       return;
     }
+    if (pkgForm.category === 'Inbound' && (!pkgForm.inboundRegionId || !pkgForm.destinationId)) {
+      alert('Please select a Tour type and Location so this tour appears in the inbound filter.');
+      return;
+    }
     setIsSaving(true);
     try {
       const method = currentPackage ? 'PUT' : 'POST';
@@ -530,18 +640,20 @@ export default function AdminDashboard() {
 
       const isNonEnglish = String(language || 'en').toLowerCase() !== 'en';
       const destinationFields = pkgForm.category === 'Outbound'
-        ? { continentId: pkgForm.continentId || '', countryId: pkgForm.countryId || '' }
-        : { continentId: '', countryId: '' };
+        ? { continentId: pkgForm.continentId || '', countryId: pkgForm.countryId || '', inboundRegionId: '', destinationId: '' }
+        : pkgForm.category === 'Inbound'
+          ? { continentId: '', countryId: '', inboundRegionId: pkgForm.inboundRegionId || '', destinationId: pkgForm.destinationId || '' }
+          : { continentId: '', countryId: '', inboundRegionId: '', destinationId: '' };
       const makeBucket = (form) => ({
         title: form.title || '',
         description: form.description || '',
         duration: form.duration || '',
         type: form.type || '',
         category: form.category || '',
-        highlights: cleanTextLines(form.highlights),
+        highlights: normalizeHighlightPoints(form.highlights),
         inclusions: cleanTextLines(form.inclusions),
         exclusions: cleanTextLines(form.exclusions),
-        itinerary: cleanTextLines(form.itinerary),
+        itinerary: serializeItineraryDays(form.itinerary),
         seoTitle: form.seoTitle || '',
         seoDescription: form.seoDescription || '',
       });
@@ -558,15 +670,16 @@ export default function AdminDashboard() {
           ...base,
           // always keep these canonical media + price/flags in sync
           price: pkgForm.price,
-          featured: !!pkgForm.featured,
-          isHot: !!pkgForm.isHot,
-          isLimitedTime: !!pkgForm.isLimitedTime,
+          currency: pkgForm.currency === 'LKR' ? 'LKR' : 'USD',
+          featured: isTruthyFlag(pkgForm.featured),
+          isHot: isTruthyFlag(pkgForm.isHot),
+          isLimitedTime: isTruthyFlag(pkgForm.isLimitedTime),
           discountPercentage: pkgForm.discountPercentage || 0,
           expiryDate: pkgForm.expiryDate ?? base.expiryDate ?? null,
           gallery,
           image: cover,
           category: pkgForm.category || base.category || 'Inbound',
-          route: normalizeRoute(pkgForm.route),
+          route: normalizeRoute(pkgForm.route, pkgForm.routeLocations),
           ...destinationFields,
           // update only the active language bucket
           localizations: {
@@ -579,14 +692,18 @@ export default function AdminDashboard() {
         };
       } else {
         // English (or creating a package): save as base, and optionally seed the bucket too.
+        const { routeLocations, ...pkgFields } = pkgForm;
         payload = {
-          ...pkgForm,
+          ...pkgFields,
           ...destinationFields,
           gallery,
           image: cover,
-          route: normalizeRoute(pkgForm.route),
-          itinerary: cleanTextLines(pkgForm.itinerary),
-          highlights: cleanTextLines(pkgForm.highlights),
+          featured: isTruthyFlag(pkgForm.featured),
+          isHot: isTruthyFlag(pkgForm.isHot),
+          isLimitedTime: isTruthyFlag(pkgForm.isLimitedTime),
+          route: normalizeRoute(pkgForm.route, routeLocations),
+          itinerary: serializeItineraryDays(pkgForm.itinerary),
+          highlights: normalizeHighlightPoints(pkgForm.highlights),
           inclusions: cleanTextLines(pkgForm.inclusions),
           exclusions: cleanTextLines(pkgForm.exclusions),
           localizations: isNonEnglish
@@ -666,7 +783,9 @@ export default function AdminDashboard() {
       const { url } = await uploadAdminImage(file);
       setBlogForm(p => ({ ...p, coverImage: url }));
     } catch (err) {
-      alert(err.message || 'Upload failed');
+      const msg = err.message || 'Upload failed';
+      alert(msg);
+      if (/session expired/i.test(msg)) setIsLoggedIn(false);
     } finally {
       setIsUploadingBlogCover(false);
     }
@@ -853,6 +972,97 @@ export default function AdminDashboard() {
       setReviews((prev) => prev.filter((r) => r._id !== id));
     } catch (err) {
       alert(err.message);
+    }
+  };
+
+  const openEditReview = (review) => {
+    setCurrentReview(review);
+    setReviewForm({
+      name: review.name || '',
+      location: review.location || '',
+      rating: Math.max(1, Math.min(5, Number(review.rating) || 5)),
+      text: review.text || '',
+      status: review.status === 'approved' ? 'approved' : 'pending',
+      photos: Array.isArray(review.photos) ? [...review.photos] : [],
+    });
+    setReviewPreviewIndex(0);
+    setIsReviewModalOpen(true);
+  };
+
+  const handleReviewPhotoFiles = async (e) => {
+    const files = Array.from(e.target.files || []);
+    e.target.value = '';
+    if (!files.length) return;
+
+    const onlyImages = files.filter((f) => f && typeof f.type === 'string' && f.type.startsWith('image/'));
+    if (onlyImages.length !== files.length) {
+      alert('Please choose image files only (JPEG, PNG, WebP, or GIF).');
+    }
+
+    const currentCount = Array.isArray(reviewForm.photos) ? reviewForm.photos.length : 0;
+    const availableSlots = Math.max(0, 5 - currentCount);
+    const selected = onlyImages.slice(0, availableSlots);
+
+    if (!selected.length) {
+      alert('You can upload up to 5 photos.');
+      return;
+    }
+
+    setIsUploadingReviewPhoto(true);
+    try {
+      const uploadedPaths = [];
+      for (const file of selected) {
+        const uploaded = await uploadAdminImage(file, 'reviews');
+        const path = uploaded?.path || uploaded?.url;
+        if (path) uploadedPaths.push(path);
+      }
+
+      setReviewForm((p) => {
+        const prev = Array.isArray(p.photos) ? p.photos : [];
+        const next = [...prev, ...uploadedPaths].slice(0, 5);
+        return { ...p, photos: next };
+      });
+    } catch (err) {
+      const msg = err.message || 'Upload failed';
+      alert(msg);
+      if (/session expired/i.test(msg)) setIsLoggedIn(false);
+    } finally {
+      setIsUploadingReviewPhoto(false);
+    }
+  };
+
+  const handleSaveReview = async (e) => {
+    e.preventDefault();
+    if (!currentReview?._id && !currentReview?.id) return;
+    const name = String(reviewForm.name || '').trim();
+    const text = String(reviewForm.text || '').trim();
+    if (!name || !text) {
+      alert('Name and review text are required.');
+      return;
+    }
+
+    setIsSavingReview(true);
+    try {
+      const id = currentReview._id || currentReview.id;
+      const updated = await apiFetch(`${API_URL}/reviews/${id}`, {
+        method: 'PUT',
+        body: JSON.stringify({
+          name,
+          location: String(reviewForm.location || '').trim(),
+          rating: Math.max(1, Math.min(5, Number(reviewForm.rating) || 5)),
+          text,
+          status: reviewForm.status === 'approved' ? 'approved' : 'pending',
+          photos: Array.isArray(reviewForm.photos) ? reviewForm.photos.filter(Boolean).slice(0, 5) : [],
+        }),
+      });
+      setReviews((prev) => prev.map((r) => (r._id === id || r.id === id ? updated : r)));
+      setIsReviewModalOpen(false);
+      setCurrentReview(null);
+      setReviewForm(emptyReview);
+    } catch (err) {
+      alert(err.message);
+    } finally {
+      setIsSavingReview(false);
     }
   };
 
@@ -1087,11 +1297,21 @@ export default function AdminDashboard() {
                         const displayType = localized.type || p.type;
                         const displayCategory = localized.category || p.category;
                         const destinationLabel = (() => {
-                          if (displayCategory !== 'Outbound' || !p.countryId) return '';
-                          const continent = destinations.find((c) => c.id === p.continentId);
-                          const country = continent?.countries?.find((c) => c.id === p.countryId);
-                          if (!country) return '';
-                          return continent ? `${continent.name} · ${country.name}` : country.name;
+                          if (displayCategory === 'Outbound' && p.countryId) {
+                            const continent = destinations.find((c) => c.id === p.continentId);
+                            const country = continent?.countries?.find((c) => c.id === p.countryId);
+                            if (!country) return '';
+                            return continent ? `${continent.name} · ${country.name}` : country.name;
+                          }
+                          if (displayCategory === 'Inbound' && (p.inboundRegionId || p.destinationId)) {
+                            const region = INBOUND_REGIONS.find((r) => r.id === p.inboundRegionId);
+                            const place = region?.destinations?.find((d) => d.id === p.destinationId)
+                              || INBOUND_REGIONS.flatMap((r) => r.destinations || []).find((d) => d.id === p.destinationId);
+                            if (region && place) return `${region.name} · ${place.name}`;
+                            if (region) return region.name;
+                            if (place) return place.name;
+                          }
+                          return '';
                         })();
 
                         return (
@@ -1100,8 +1320,8 @@ export default function AdminDashboard() {
                         <img src={mediaUrl(p.image)} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                         <div style={{ position: 'absolute', top: '0.75rem', right: '0.75rem', display: 'flex', gap: '0.4rem' }}>
                           <span style={{ background: '#0f172a', color: 'white', padding: '0.25rem 0.6rem', borderRadius: '1rem', fontSize: '0.7rem', fontWeight: '800' }}>{displayCategory}</span>
-                          {p.featured && <span style={{ background: '#f59e0b', color: 'white', padding: '0.25rem 0.6rem', borderRadius: '1rem', fontSize: '0.7rem', fontWeight: '800' }}>⭐ Featured</span>}
-                          {p.isHot && <span style={{ background: '#ef4444', color: 'white', padding: '0.25rem 0.6rem', borderRadius: '1rem', fontSize: '0.7rem', fontWeight: '800' }}>🔥 Hot</span>}
+                          {isTruthyFlag(p.featured) && <span style={{ background: '#f59e0b', color: 'white', padding: '0.25rem 0.6rem', borderRadius: '1rem', fontSize: '0.7rem', fontWeight: '800' }}>⭐ Featured</span>}
+                          {isTruthyFlag(p.isHot) && <span style={{ background: '#ef4444', color: 'white', padding: '0.25rem 0.6rem', borderRadius: '1rem', fontSize: '0.7rem', fontWeight: '800' }}>🔥 Hot</span>}
                         </div>
                       </div>
                       <div style={{ padding: '1.25rem' }}>
@@ -1112,7 +1332,7 @@ export default function AdminDashboard() {
                         )}
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: '1rem', borderTop: '1px solid #f1f5f9' }}>
                           <span style={{ fontSize: '1.35rem', fontWeight: '900', color: '#0f172a' }}>
-                            {formatMoney(p.price || 0, 'USD')}
+                            {formatMoney(p.price || 0, p.currency === 'LKR' ? 'LKR' : 'USD', { fromCurrency: p.currency === 'LKR' ? 'LKR' : 'USD' })}
                           </span>
                           <div style={{ display: 'flex', gap: '0.4rem' }}>
                             <button onClick={() => handleOpenPkgModal(p)} className="btn" style={{ padding: '0.5rem', background: '#f1f5f9', color: '#64748b' }}><Pencil size={16} /></button>
@@ -1327,6 +1547,14 @@ export default function AdminDashboard() {
                                     </button>
                                   )}
                                   <button
+                                    onClick={() => openEditReview(r)}
+                                    className="btn"
+                                    style={{ background: '#eff6ff', color: '#1d4ed8', padding: '0.5rem' }}
+                                    title="Edit"
+                                  >
+                                    <Pencil size={18} />
+                                  </button>
+                                  <button
                                     onClick={() => rejectReview(r._id)}
                                     className="btn"
                                     style={{ background: '#fef2f2', color: '#ef4444', padding: '0.5rem' }}
@@ -1395,7 +1623,7 @@ export default function AdminDashboard() {
                         <input className="form-control" value={settingsForm.contactPhone || ''} onChange={e => setSettingsForm(p => ({ ...p, contactPhone: e.target.value }))} />
                       </FormField>
                       <FormField label="WhatsApp Number (digits only)">
-                        <input className="form-control" value={settingsForm.contactWhatsApp || ''} onChange={e => setSettingsForm(p => ({ ...p, contactWhatsApp: e.target.value }))} placeholder="94771234567" />
+                        <input className="form-control" value={settingsForm.contactWhatsApp || ''} onChange={e => setSettingsForm(p => ({ ...p, contactWhatsApp: e.target.value }))} placeholder="94771133100" />
                       </FormField>
                       <FormField label="Address">
                         <input className="form-control" value={settingsForm.contactAddress || ''} onChange={e => setSettingsForm(p => ({ ...p, contactAddress: e.target.value }))} />
@@ -1587,6 +1815,8 @@ export default function AdminDashboard() {
                         category,
                         continentId: category === 'Outbound' ? (p.continentId || '') : '',
                         countryId: category === 'Outbound' ? (p.countryId || '') : '',
+                        inboundRegionId: category === 'Inbound' ? (p.inboundRegionId || '') : '',
+                        destinationId: category === 'Inbound' ? (p.destinationId || '') : '',
                       }));
                     }}
                   >
@@ -1595,6 +1825,37 @@ export default function AdminDashboard() {
                   </select>
                 </FormField>
               </div>
+              {pkgForm.category === 'Inbound' && (
+                <div className="grid-2">
+                  <FormField label="Tour type">
+                    <select
+                      required
+                      className="form-control"
+                      value={pkgForm.inboundRegionId || ''}
+                      onChange={e => setPkgForm(p => ({ ...p, inboundRegionId: e.target.value, destinationId: '' }))}
+                    >
+                      <option value="">Select tour type</option>
+                      {INBOUND_REGIONS.map((region) => (
+                        <option key={region.id} value={region.id}>{region.name}</option>
+                      ))}
+                    </select>
+                  </FormField>
+                  <FormField label="Location">
+                    <select
+                      required
+                      className="form-control"
+                      value={pkgForm.destinationId || ''}
+                      onChange={e => setPkgForm(p => ({ ...p, destinationId: e.target.value }))}
+                      disabled={!pkgForm.inboundRegionId}
+                    >
+                      <option value="">{pkgForm.inboundRegionId ? 'Select location' : 'Select tour type first'}</option>
+                      {(INBOUND_REGIONS.find((r) => r.id === pkgForm.inboundRegionId)?.destinations || []).map((place) => (
+                        <option key={place.id} value={place.id}>{place.name}</option>
+                      ))}
+                    </select>
+                  </FormField>
+                </div>
+              )}
               {pkgForm.category === 'Outbound' && (
                 <div className="grid-2">
                   <FormField label="Region (Destinations)">
@@ -1627,7 +1888,31 @@ export default function AdminDashboard() {
                 </div>
               )}
               <div className="grid-2">
-                <FormField label="Price (USD)"><input required type="number" className="form-control" value={pkgForm.price} onChange={e => setPkgForm(p => ({ ...p, price: Number(e.target.value) }))} /></FormField>
+                <FormField label="Price">
+                  <div style={{ display: 'flex', gap: '0.5rem' }}>
+                    <select
+                      className="form-control"
+                      value={pkgForm.currency === 'LKR' ? 'LKR' : 'USD'}
+                      onChange={e => setPkgForm(p => ({ ...p, currency: e.target.value === 'LKR' ? 'LKR' : 'USD' }))}
+                      style={{ width: '7.5rem', flexShrink: 0 }}
+                      aria-label="Price currency"
+                    >
+                      <option value="USD">USD</option>
+                      <option value="LKR">LKR</option>
+                    </select>
+                    <input
+                      required
+                      type="number"
+                      min={0}
+                      step="any"
+                      className="form-control"
+                      value={pkgForm.price}
+                      onChange={e => setPkgForm(p => ({ ...p, price: Number(e.target.value) }))}
+                      placeholder={pkgForm.currency === 'LKR' ? 'e.g. 85000' : 'e.g. 287'}
+                      style={{ flex: 1 }}
+                    />
+                  </div>
+                </FormField>
                 <FormField label="Duration"><input required className="form-control" value={pkgForm.duration} onChange={e => setPkgForm(p => ({ ...p, duration: e.target.value }))} placeholder="e.g. 8 Days" /></FormField>
               </div>
               <div className="grid-2">
@@ -1640,18 +1925,18 @@ export default function AdminDashboard() {
                 <FormField label="Options">
                   <div style={{ display: 'flex', gap: '1.5rem', paddingTop: '0.5rem' }}>
                     <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', fontWeight: '700', color: '#475569' }}>
-                      <input type="checkbox" checked={pkgForm.featured} onChange={e => setPkgForm(p => ({ ...p, featured: e.target.checked }))} style={{ accentColor: 'hsl(var(--primary))' }} /> Featured
+                      <input type="checkbox" checked={isTruthyFlag(pkgForm.featured)} onChange={e => setPkgForm(p => ({ ...p, featured: e.target.checked }))} style={{ accentColor: 'hsl(var(--primary))' }} /> Featured
                     </label>
                     <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', fontWeight: '700', color: '#475569' }}>
-                      <input type="checkbox" checked={pkgForm.isLimitedTime} onChange={e => setPkgForm(p => ({ ...p, isLimitedTime: e.target.checked }))} style={{ accentColor: 'hsl(var(--primary))' }} /> Limited Time
+                      <input type="checkbox" checked={isTruthyFlag(pkgForm.isLimitedTime)} onChange={e => setPkgForm(p => ({ ...p, isLimitedTime: e.target.checked }))} style={{ accentColor: 'hsl(var(--primary))' }} /> Limited Time
                     </label>
                     <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', fontWeight: '700', color: '#475569' }}>
-                      <input type="checkbox" checked={pkgForm.isHot} onChange={e => setPkgForm(p => ({ ...p, isHot: e.target.checked }))} style={{ accentColor: 'hsl(var(--primary))' }} /> Hot Package (Popup)
+                      <input type="checkbox" checked={isTruthyFlag(pkgForm.isHot)} onChange={e => setPkgForm(p => ({ ...p, isHot: e.target.checked }))} style={{ accentColor: 'hsl(var(--primary))' }} /> Hot Package (Popup)
                     </label>
                   </div>
                 </FormField>
               </div>
-              {pkgForm.isLimitedTime && (
+              {isTruthyFlag(pkgForm.isLimitedTime) && (
                 <FormField label="Discount %">
                   <input type="number" min={0} max={100} className="form-control" value={pkgForm.discountPercentage} onChange={e => setPkgForm(p => ({ ...p, discountPercentage: Number(e.target.value) }))} />
                 </FormField>
@@ -1838,20 +2123,339 @@ export default function AdminDashboard() {
               <FormField label="Description">
                 <textarea required className="form-control" rows={3} style={{ resize: 'vertical' }} value={pkgForm.description} onChange={e => setPkgForm(p => ({ ...p, description: e.target.value }))} />
               </FormField>
-              <FormField label="Highlights (one per line)">
-                <textarea className="form-control" rows={3} style={{ resize: 'vertical' }} value={(pkgForm.highlights || []).join('\n')} onChange={e => setPkgForm(p => ({ ...p, highlights: e.target.value.split('\n').filter(Boolean) }))} placeholder="Temple of the Tooth Relic&#10;Elephant Safari&#10;Tea Plantation Visit" />
+              <FormField label="Tour Highlights">
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem' }}>
+                  {(pkgForm.highlights || []).map((item, index) => (
+                    <div
+                      key={`highlight-${index}`}
+                      style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}
+                    >
+                      <span style={{
+                        minWidth: '1.5rem',
+                        height: '1.5rem',
+                        borderRadius: '999px',
+                        background: 'hsl(var(--primary) / 0.12)',
+                        color: 'hsl(var(--primary))',
+                        fontSize: '0.75rem',
+                        fontWeight: 800,
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        flexShrink: 0,
+                      }}>
+                        {index + 1}
+                      </span>
+                      <input
+                        className="form-control"
+                        value={item}
+                        onChange={(e) => {
+                          const value = e.target.value;
+                          setPkgForm((p) => {
+                            const next = [...(p.highlights || [])];
+                            next[index] = value;
+                            return { ...p, highlights: next };
+                          });
+                        }}
+                        placeholder={`Highlight ${index + 1}`}
+                      />
+                      <button
+                        type="button"
+                        className="btn"
+                        title="Remove highlight"
+                        onClick={() => setPkgForm((p) => ({
+                          ...p,
+                          highlights: (p.highlights || []).filter((_, i) => i !== index),
+                        }))}
+                        style={{ padding: '0.45rem', background: '#fef2f2', color: '#ef4444', flexShrink: 0 }}
+                      >
+                        <Trash2 size={16} />
+                      </button>
+                    </div>
+                  ))}
+
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    <input
+                      className="form-control"
+                      value={pkgHighlightInput}
+                      onChange={(e) => setPkgHighlightInput(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key !== 'Enter') return;
+                        e.preventDefault();
+                        const value = pkgHighlightInput.trim();
+                        if (!value) return;
+                        setPkgForm((p) => ({
+                          ...p,
+                          highlights: [...(p.highlights || []), ...normalizeHighlightPoints([value])],
+                        }));
+                        setPkgHighlightInput('');
+                      }}
+                      placeholder="Type a highlight and press Enter or Add"
+                    />
+                    <button
+                      type="button"
+                      className="btn"
+                      onClick={() => {
+                        const value = pkgHighlightInput.trim();
+                        if (!value) return;
+                        setPkgForm((p) => ({
+                          ...p,
+                          highlights: [...(p.highlights || []), ...normalizeHighlightPoints([value])],
+                        }));
+                        setPkgHighlightInput('');
+                      }}
+                      style={{
+                        padding: '0.55rem 0.9rem',
+                        background: 'hsl(var(--primary))',
+                        color: '#fff',
+                        fontWeight: 700,
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '0.35rem',
+                        flexShrink: 0,
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      <Plus size={16} /> Add
+                    </button>
+                  </div>
+                  <div style={{ fontSize: '0.82rem', color: '#64748b', fontWeight: 600, lineHeight: 1.4 }}>
+                    Add each tour highlight as a separate point. They appear as a list on the tour page.
+                  </div>
+                </div>
               </FormField>
-              <FormField label="Itinerary (one day per line)">
-                <textarea
-                  className="form-control"
-                  rows={6}
-                  style={{ resize: 'vertical' }}
-                  value={(pkgForm.itinerary || []).map((item) => (typeof item === 'string' ? item : (item?.day ? `${item.day}: ${(item.activities || []).join(', ')}` : JSON.stringify(item)))).join('\n')}
-                  onChange={(e) => setPkgForm((p) => ({ ...p, itinerary: e.target.value.split('\n') }))}
-                  placeholder="Day 1: Colombo&#10;Day 2: Sigiriya&#10;Day 3: Kandy&#10;Day 4: Ella"
-                />
-                <div style={{ marginTop: '0.45rem', fontSize: '0.82rem', color: '#64748b', fontWeight: 600, lineHeight: 1.4 }}>
-                  Press Enter for each new day. Place names update the day-by-day route map automatically.
+              <FormField label="Itinerary (day by day)">
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                  {(pkgForm.itinerary || []).map((day, index) => {
+                    const dayLabel = formatDayLabel(index + 1);
+                    return (
+                      <div
+                        key={`itinerary-day-${index}`}
+                        style={{
+                          border: '1px solid #e2e8f0',
+                          borderRadius: '0.75rem',
+                          padding: '0.85rem',
+                          background: '#f8fafc',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          gap: '0.55rem',
+                        }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.5rem' }}>
+                          <div
+                            style={{
+                              fontWeight: 800,
+                              fontSize: '0.95rem',
+                              color: '#0f172a',
+                            }}
+                          >
+                            {dayLabel}
+                          </div>
+                          <button
+                            type="button"
+                            className="btn"
+                            title="Remove day"
+                            onClick={() => setPkgForm((p) => ({
+                              ...p,
+                              itinerary: (p.itinerary || [])
+                                .filter((_, i) => i !== index)
+                                .map((d, i) => ({
+                                  ...d,
+                                  day: formatDayLabel(i + 1),
+                                  title: formatDayLabel(i + 1),
+                                })),
+                            }))}
+                            style={{ padding: '0.4rem', background: '#fef2f2', color: '#ef4444', flexShrink: 0 }}
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                        </div>
+
+                        <div>
+                          <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 700, color: '#64748b', marginBottom: '0.25rem' }}>
+                            Day title (always shown on tour page)
+                          </label>
+                          <input
+                            className="form-control"
+                            value={day?.places || ''}
+                            onChange={(e) => {
+                              const value = e.target.value;
+                              setPkgForm((p) => {
+                                const next = [...(p.itinerary || [])];
+                                next[index] = {
+                                  day: dayLabel,
+                                  title: dayLabel,
+                                  places: value,
+                                  details: next[index]?.details || '',
+                                };
+                                return { ...p, itinerary: next };
+                              });
+                            }}
+                            placeholder="e.g. ARRIVAL DELHI"
+                          />
+                        </div>
+
+                        <div>
+                          <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 700, color: '#64748b', marginBottom: '0.25rem' }}>
+                            Day details (shown after Show +)
+                          </label>
+                          <textarea
+                            className="form-control"
+                            rows={3}
+                            style={{ resize: 'vertical' }}
+                            value={day?.details || ''}
+                            onChange={(e) => {
+                              const value = e.target.value;
+                              setPkgForm((p) => {
+                                const next = [...(p.itinerary || [])];
+                                next[index] = {
+                                  day: dayLabel,
+                                  title: dayLabel,
+                                  places: next[index]?.places || '',
+                                  details: value,
+                                };
+                                return { ...p, itinerary: next };
+                              });
+                            }}
+                            placeholder="Arrive at New Delhi International Airport. Meet and greet..."
+                          />
+                        </div>
+                      </div>
+                    );
+                  })}
+
+                  <button
+                    type="button"
+                    className="btn"
+                    onClick={() => setPkgForm((p) => {
+                      const nextIndex = (p.itinerary || []).length + 1;
+                      const dayLabel = formatDayLabel(nextIndex);
+                      return {
+                        ...p,
+                        itinerary: [
+                          ...(p.itinerary || []),
+                          { day: dayLabel, title: dayLabel, places: '', details: '' },
+                        ],
+                      };
+                    })}
+                    style={{
+                      padding: '0.55rem 0.9rem',
+                      background: 'hsl(var(--primary))',
+                      color: '#fff',
+                      fontWeight: 700,
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '0.35rem',
+                      alignSelf: 'flex-start',
+                    }}
+                  >
+                    <Plus size={16} /> Add Day
+                  </button>
+
+                  <div style={{ fontSize: '0.82rem', color: '#64748b', fontWeight: 600, lineHeight: 1.4 }}>
+                    On the tour page, visitors always see <strong>Day 01</strong> + the day title.
+                    Clicking <strong>Show +</strong> reveals that day’s full details.
+                  </div>
+                </div>
+              </FormField>
+
+              <FormField label="Route map locations">
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem' }}>
+                  {(pkgForm.routeLocations || []).map((item, index) => (
+                    <div
+                      key={`route-loc-${index}`}
+                      style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}
+                    >
+                      <span style={{
+                        minWidth: '1.5rem',
+                        height: '1.5rem',
+                        borderRadius: '999px',
+                        background: 'hsl(142 76% 36% / 0.15)',
+                        color: 'hsl(142 76% 28%)',
+                        fontSize: '0.75rem',
+                        fontWeight: 800,
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        flexShrink: 0,
+                      }}>
+                        {index + 1}
+                      </span>
+                      <input
+                        className="form-control"
+                        value={item}
+                        onChange={(e) => {
+                          const value = e.target.value;
+                          setPkgForm((p) => {
+                            const next = [...(p.routeLocations || [])];
+                            next[index] = value;
+                            return { ...p, routeLocations: next };
+                          });
+                        }}
+                        placeholder={`Location ${index + 1} (e.g. Kuala Lumpur)`}
+                      />
+                      <button
+                        type="button"
+                        className="btn"
+                        title="Remove location"
+                        onClick={() => setPkgForm((p) => ({
+                          ...p,
+                          routeLocations: (p.routeLocations || []).filter((_, i) => i !== index),
+                        }))}
+                        style={{ padding: '0.45rem', background: '#fef2f2', color: '#ef4444', flexShrink: 0 }}
+                      >
+                        <Trash2 size={16} />
+                      </button>
+                    </div>
+                  ))}
+
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    <input
+                      className="form-control"
+                      value={pkgRouteLocationInput}
+                      onChange={(e) => setPkgRouteLocationInput(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key !== 'Enter') return;
+                        e.preventDefault();
+                        const value = pkgRouteLocationInput.trim();
+                        if (!value) return;
+                        setPkgForm((p) => ({
+                          ...p,
+                          routeLocations: [...(p.routeLocations || []), value],
+                        }));
+                        setPkgRouteLocationInput('');
+                      }}
+                      placeholder="Type a place name and press Enter or Add"
+                    />
+                    <button
+                      type="button"
+                      className="btn"
+                      onClick={() => {
+                        const value = pkgRouteLocationInput.trim();
+                        if (!value) return;
+                        setPkgForm((p) => ({
+                          ...p,
+                          routeLocations: [...(p.routeLocations || []), value],
+                        }));
+                        setPkgRouteLocationInput('');
+                      }}
+                      style={{
+                        padding: '0.55rem 0.9rem',
+                        background: 'hsl(142 76% 36%)',
+                        color: '#fff',
+                        fontWeight: 700,
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '0.35rem',
+                        flexShrink: 0,
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      <Plus size={16} /> Add
+                    </button>
+                  </div>
+                  <div style={{ fontSize: '0.82rem', color: '#64748b', fontWeight: 600, lineHeight: 1.4 }}>
+                    Add map points in order (Day 1, Day 2…). Use clear place names so they can be found on the map.
+                  </div>
                 </div>
               </FormField>
 
@@ -1884,8 +2488,8 @@ export default function AdminDashboard() {
                       fontSize: '0.9rem',
                     }}>
                       {isGeocodingRoute
-                        ? 'Locating day places…'
-                        : 'Add Day 1, Day 2, Day 3… with place names to build the route'}
+                        ? 'Locating places…'
+                        : 'Add route map locations above to build the route'}
                     </div>
                   )}
                 </div>
@@ -2028,6 +2632,234 @@ export default function AdminDashboard() {
                 <button type="button" onClick={() => setIsBlogModalOpen(false)} className="btn" style={{ flex: 1, background: '#f1f5f9', color: '#64748b' }}>Cancel</button>
                 <button type="submit" disabled={isSaving} className="btn btn-primary" style={{ flex: 1, gap: '0.75rem' }}>
                   {isSaving ? 'Saving...' : <><Save size={18} /> {currentBlog ? 'Update' : 'Publish'} Post</>}
+                </button>
+              </div>
+            </form>
+          </Modal>
+        )}
+      </AnimatePresence>
+
+      {/* ── Review Edit Modal ── */}
+      <AnimatePresence>
+        {isReviewModalOpen && currentReview && (
+          <Modal
+            onClose={() => {
+              if (isSavingReview || isUploadingReviewPhoto) return;
+              setIsReviewModalOpen(false);
+              setCurrentReview(null);
+              setReviewForm(emptyReview);
+            }}
+            title="Edit Review"
+          >
+            <form onSubmit={handleSaveReview} style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                <FormField label="Name">
+                  <input
+                    className="form-control"
+                    value={reviewForm.name}
+                    onChange={(e) => setReviewForm((p) => ({ ...p, name: e.target.value }))}
+                    required
+                  />
+                </FormField>
+                <FormField label="Location">
+                  <input
+                    className="form-control"
+                    value={reviewForm.location}
+                    onChange={(e) => setReviewForm((p) => ({ ...p, location: e.target.value }))}
+                    placeholder="e.g. Malaysia"
+                  />
+                </FormField>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                <FormField label="Rating">
+                  <select
+                    className="form-control"
+                    value={reviewForm.rating}
+                    onChange={(e) => setReviewForm((p) => ({ ...p, rating: Number(e.target.value) }))}
+                  >
+                    {[5, 4, 3, 2, 1].map((n) => (
+                      <option key={n} value={n}>{n} star{n === 1 ? '' : 's'}</option>
+                    ))}
+                  </select>
+                </FormField>
+                <FormField label="Status">
+                  <select
+                    className="form-control"
+                    value={reviewForm.status}
+                    onChange={(e) => setReviewForm((p) => ({ ...p, status: e.target.value }))}
+                  >
+                    <option value="pending">Pending</option>
+                    <option value="approved">Approved</option>
+                  </select>
+                </FormField>
+              </div>
+
+              <FormField label="Review text">
+                <textarea
+                  className="form-control"
+                  rows={5}
+                  style={{ resize: 'vertical' }}
+                  value={reviewForm.text}
+                  onChange={(e) => setReviewForm((p) => ({ ...p, text: e.target.value }))}
+                  required
+                />
+              </FormField>
+
+              <FormField label="Photos">
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '0.75rem' }}>
+                    <input
+                      id="review-photo-file"
+                      type="file"
+                      accept="image/jpeg,image/png,image/webp,image/gif"
+                      multiple
+                      style={{ display: 'none' }}
+                      onChange={handleReviewPhotoFiles}
+                      disabled={isUploadingReviewPhoto || isSavingReview}
+                    />
+                    <label
+                      htmlFor="review-photo-file"
+                      className="btn"
+                      style={{
+                        cursor: isUploadingReviewPhoto ? 'wait' : 'pointer',
+                        margin: 0,
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '0.5rem',
+                        background: '#f1f5f9',
+                        color: '#475569',
+                      }}
+                    >
+                      <Image size={18} /> {isUploadingReviewPhoto ? 'Uploading…' : 'Upload photos'}
+                    </label>
+                    <span style={{ fontSize: '0.85rem', color: '#64748b', fontWeight: 600 }}>
+                      {(Array.isArray(reviewForm.photos) ? reviewForm.photos.length : 0)}/5 selected
+                    </span>
+                  </div>
+
+                  {(Array.isArray(reviewForm.photos) ? reviewForm.photos.length : 0) > 0 ? (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                      <div style={{ position: 'relative', width: '100%', maxWidth: '520px' }}>
+                        <img
+                          src={mediaUrl(reviewForm.photos[reviewPreviewIndex])}
+                          alt=""
+                          style={{ width: '100%', height: '220px', objectFit: 'cover', borderRadius: '0.75rem', border: '1px solid #e2e8f0' }}
+                        />
+                        {reviewForm.photos.length > 1 && (
+                          <>
+                            <button
+                              type="button"
+                              className="btn"
+                              style={{
+                                position: 'absolute',
+                                left: '0.75rem',
+                                top: '50%',
+                                transform: 'translateY(-50%)',
+                                padding: '0.35rem 0.5rem',
+                                borderRadius: '999px',
+                                background: 'rgba(255,255,255,0.85)',
+                                color: '#0f172a',
+                                border: '1px solid rgba(15,23,42,0.12)',
+                              }}
+                              onClick={() => setReviewPreviewIndex((i) => (i - 1 + reviewForm.photos.length) % reviewForm.photos.length)}
+                              aria-label="Previous image"
+                            >
+                              <ChevronLeft size={18} />
+                            </button>
+                            <button
+                              type="button"
+                              className="btn"
+                              style={{
+                                position: 'absolute',
+                                right: '0.75rem',
+                                top: '50%',
+                                transform: 'translateY(-50%)',
+                                padding: '0.35rem 0.5rem',
+                                borderRadius: '999px',
+                                background: 'rgba(255,255,255,0.85)',
+                                color: '#0f172a',
+                                border: '1px solid rgba(15,23,42,0.12)',
+                              }}
+                              onClick={() => setReviewPreviewIndex((i) => (i + 1) % reviewForm.photos.length)}
+                              aria-label="Next image"
+                            >
+                              <ChevronRight size={18} />
+                            </button>
+                          </>
+                        )}
+                      </div>
+
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+                        {reviewForm.photos.map((u, idx) => (
+                          <button
+                            key={`${u}-${idx}`}
+                            type="button"
+                            onClick={() => setReviewPreviewIndex(idx)}
+                            style={{
+                              width: '58px',
+                              height: '40px',
+                              borderRadius: '0.5rem',
+                              border: idx === reviewPreviewIndex ? '2px solid hsl(var(--primary))' : '1px solid #e2e8f0',
+                              background: `url(${mediaUrl(u)}) center/cover`,
+                              cursor: 'pointer',
+                            }}
+                            aria-label={`Preview image ${idx + 1}`}
+                          />
+                        ))}
+                      </div>
+
+                      <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
+                        <button
+                          type="button"
+                          className="btn"
+                          style={{ fontSize: '0.85rem', padding: '0.35rem 0.75rem', background: '#fef2f2', color: '#b91c1c' }}
+                          onClick={() => {
+                            setReviewForm((p) => ({ ...p, photos: [] }));
+                            setReviewPreviewIndex(0);
+                          }}
+                        >
+                          Remove all
+                        </button>
+                        <button
+                          type="button"
+                          className="btn"
+                          style={{ fontSize: '0.85rem', padding: '0.35rem 0.75rem', background: '#fff7ed', color: '#9a3412' }}
+                          onClick={() => {
+                            setReviewForm((p) => {
+                              const g = Array.isArray(p.photos) ? p.photos : [];
+                              return { ...p, photos: g.filter((_, i) => i !== reviewPreviewIndex) };
+                            });
+                            setReviewPreviewIndex((i) => Math.max(0, i - 1));
+                          }}
+                          disabled={!reviewForm.photos.length}
+                        >
+                          Remove current
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div style={{ color: '#94a3b8', fontWeight: 700, fontSize: '0.9rem' }}>No photos yet</div>
+                  )}
+                </div>
+              </FormField>
+
+              <div style={{ display: 'flex', gap: '1rem', marginTop: '0.5rem' }}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsReviewModalOpen(false);
+                    setCurrentReview(null);
+                    setReviewForm(emptyReview);
+                  }}
+                  className="btn"
+                  style={{ flex: 1, background: '#f1f5f9', color: '#64748b' }}
+                  disabled={isSavingReview || isUploadingReviewPhoto}
+                >
+                  Cancel
+                </button>
+                <button type="submit" disabled={isSavingReview || isUploadingReviewPhoto} className="btn btn-primary" style={{ flex: 1, gap: '0.75rem' }}>
+                  {isSavingReview ? 'Saving...' : <><Save size={18} /> Update Review</>}
                 </button>
               </div>
             </form>

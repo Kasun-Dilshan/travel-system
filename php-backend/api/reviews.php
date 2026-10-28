@@ -69,18 +69,40 @@ function fetchReviews($pdo, $statusFilter = null) {
     }, $rows);
 }
 
+function unlinkReviewPhotoPath($path) {
+    if (!$path || !is_string($path)) {
+        return;
+    }
+    $normalized = normalizeReviewPhotoPath($path);
+    if ($normalized === '') {
+        return;
+    }
+    $relative = ltrim($normalized, '/');
+    $full = __DIR__ . '/../' . $relative;
+    if (is_file($full)) {
+        @unlink($full);
+    }
+}
+
+function normalizeReviewPhotoPath($path) {
+    if (!is_string($path)) {
+        return '';
+    }
+    $path = trim($path);
+    if ($path === '') {
+        return '';
+    }
+    if (preg_match('#(?:^|/)(uploads/reviews/[^?#]+)#i', $path, $m)) {
+        return '/' . ltrim(str_replace('\\', '/', $m[1]), '/');
+    }
+    return '';
+}
+
 function deleteReviewPhotosFromDisk($pdo, $reviewId) {
     $stmt = $pdo->prepare('SELECT path FROM review_photos WHERE review_id = ?');
     $stmt->execute([$reviewId]);
     foreach ($stmt->fetchAll() as $row) {
-        $path = $row['path'] ?? '';
-        if (!$path) continue;
-        $relative = ltrim(str_replace('\\', '/', $path), '/');
-        if (strpos($relative, 'uploads/reviews/') !== 0) continue;
-        $full = __DIR__ . '/../' . $relative;
-        if (is_file($full)) {
-            @unlink($full);
-        }
+        unlinkReviewPhotoPath($row['path'] ?? '');
     }
 }
 
@@ -223,6 +245,115 @@ elseif ($method === 'PATCH') {
 
     $review = fetchReviewById($pdo, $id);
     sendResponse($review);
+}
+elseif ($method === 'PUT') {
+    requireAdmin();
+    $data = getRequestBody();
+    $id = $_GET['id'] ?? $data['id'] ?? null;
+    if (!$id) {
+        sendResponse(['message' => 'ID required'], 400);
+    }
+
+    $existingStmt = $pdo->prepare('SELECT * FROM reviews WHERE id = ?');
+    $existingStmt->execute([$id]);
+    $existing = $existingStmt->fetch();
+    if (!$existing) {
+        sendResponse(['message' => 'Review not found'], 404);
+    }
+
+    $name = trim((string) ($data['name'] ?? $existing['name'] ?? ''));
+    $location = trim((string) ($data['location'] ?? $existing['location'] ?? ''));
+    $text = trim((string) ($data['text'] ?? $existing['review_text'] ?? ''));
+    $rating = (int) ($data['rating'] ?? $existing['rating'] ?? 5);
+    $status = strtolower(trim((string) ($data['status'] ?? $existing['status'] ?? 'pending')));
+
+    if ($name === '' || $text === '') {
+        sendResponse(['message' => 'Name and review text are required'], 400);
+    }
+    $rating = max(1, min(5, $rating));
+    if (!in_array($status, ['pending', 'approved'], true)) {
+        sendResponse(['message' => 'Status must be pending or approved'], 400);
+    }
+
+    $approvedAt = $existing['approved_at'] ?? null;
+    if ($status === 'approved' && (!$approvedAt || ($existing['status'] ?? '') !== 'approved')) {
+        $approvedAtSql = 'NOW()';
+        $approvedAtParam = null;
+    } elseif ($status === 'pending') {
+        $approvedAtSql = 'NULL';
+        $approvedAtParam = null;
+    } else {
+        $approvedAtSql = '?';
+        $approvedAtParam = $approvedAt;
+    }
+
+    $replacePhotos = array_key_exists('photos', $data);
+    $normalizedPhotos = [];
+    if ($replacePhotos) {
+        $rawPhotos = $data['photos'];
+        if (!is_array($rawPhotos)) {
+            sendResponse(['message' => 'photos must be an array'], 400);
+        }
+        foreach ($rawPhotos as $photo) {
+            $normalized = normalizeReviewPhotoPath($photo);
+            if ($normalized === '') {
+                continue;
+            }
+            if (!in_array($normalized, $normalizedPhotos, true)) {
+                $normalizedPhotos[] = $normalized;
+            }
+            if (count($normalizedPhotos) >= 5) {
+                break;
+            }
+        }
+    }
+
+    try {
+        $pdo->beginTransaction();
+
+        if ($approvedAtSql === '?') {
+            $stmt = $pdo->prepare(
+                "UPDATE reviews SET name = ?, location = ?, rating = ?, review_text = ?, status = ?, approved_at = ? WHERE id = ?"
+            );
+            $stmt->execute([$name, $location, $rating, $text, $status, $approvedAtParam, $id]);
+        } else {
+            $stmt = $pdo->prepare(
+                "UPDATE reviews SET name = ?, location = ?, rating = ?, review_text = ?, status = ?, approved_at = {$approvedAtSql} WHERE id = ?"
+            );
+            $stmt->execute([$name, $location, $rating, $text, $status, $id]);
+        }
+
+        if ($replacePhotos) {
+            $oldStmt = $pdo->prepare('SELECT path FROM review_photos WHERE review_id = ?');
+            $oldStmt->execute([$id]);
+            $oldPaths = array_column($oldStmt->fetchAll(), 'path');
+
+            $delStmt = $pdo->prepare('DELETE FROM review_photos WHERE review_id = ?');
+            $delStmt->execute([$id]);
+
+            if ($normalizedPhotos) {
+                $photoStmt = $pdo->prepare('INSERT INTO review_photos (review_id, path) VALUES (?, ?)');
+                foreach ($normalizedPhotos as $path) {
+                    $photoStmt->execute([$id, $path]);
+                }
+            }
+
+            foreach ($oldPaths as $oldPath) {
+                $normalizedOld = normalizeReviewPhotoPath($oldPath);
+                if ($normalizedOld && !in_array($normalizedOld, $normalizedPhotos, true)) {
+                    unlinkReviewPhotoPath($normalizedOld);
+                }
+            }
+        }
+
+        $pdo->commit();
+        sendResponse(fetchReviewById($pdo, $id));
+    } catch (Exception $e) {
+        if ($pdo->inTransaction()) {
+            $pdo->rollBack();
+        }
+        sendResponse(['message' => 'Error: ' . $e->getMessage()], 400);
+    }
 }
 elseif ($method === 'DELETE') {
     requireAdmin();

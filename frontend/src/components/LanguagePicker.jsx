@@ -6,6 +6,8 @@ const LANGUAGES = [
   { code: 'en', name: 'English', flag: '🇺🇸' },
   { code: 'de', name: 'Deutsch', flag: '🇩🇪' },
   { code: 'fr', name: 'Français', flag: '🇫🇷' },
+  { code: 'es', name: 'Español', flag: '🇪🇸' },
+  { code: 'pl', name: 'Polski', flag: '🇵🇱' },
   { code: 'zh', name: '简体中文', flag: '🇨🇳' },
   { code: 'jp', name: '日本語', flag: '🇯🇵' },
   { code: 'ar', name: 'العربية', flag: '🇦🇪' },

@@ -4,7 +4,7 @@ import { ShieldCheck, Star, Users } from 'lucide-react';
 import aboutServicesImg from '../assets/about-our-services.webp';
 import { useSite } from '../context/SiteContext';
 
-const SubAboutUs = ({ title, content, accentColor = 'hsl(var(--primary))' }) => {
+const SubAboutUs = ({ title, content, accentColor = 'hsl(var(--primary))', image = aboutServicesImg, imageAlt = 'About our services' }) => {
   const { t } = useSite();
   const features = [
     { icon: <ShieldCheck size={20} />, label: t?.subAboutVerified || "Verified Tours" },
@@ -59,8 +59,8 @@ const SubAboutUs = ({ title, content, accentColor = 'hsl(var(--primary))' }) => 
           }}
         >
           <img
-            src={aboutServicesImg}
-            alt="About our services"
+            src={image}
+            alt={imageAlt}
             style={{
               width: '100%',
               height: '100%',

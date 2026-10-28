@@ -9,6 +9,7 @@ import { SiteProvider, useSite } from "./context/SiteContext";
 import Navbar from "./components/Navbar";
 import Footer from "./components/Footer";
 import FloatingObjects from "./components/FloatingObjects";
+import FloatingContact from "./components/FloatingContact";
 import CookieBanner from "./components/CookieBanner";
 import HotPackagePopup from "./components/HotPackagePopup";
 
@@ -20,12 +21,14 @@ const OutboundDestinations = lazy(() => import("./pages/OutboundDestinations"));
 const OutboundContinent = lazy(() => import("./pages/OutboundContinent"));
 const OutboundCountry = lazy(() => import("./pages/OutboundCountry"));
 const BookingPage = lazy(() => import("./pages/BookingPage"));
+const TourDetail = lazy(() => import("./pages/TourDetail"));
 const AdminDashboard = lazy(() => import("./pages/AdminDashboard"));
 const TermsConditions = lazy(() => import("./pages/TermsConditions"));
 const PrivacyPolicy = lazy(() => import("./pages/PrivacyPolicy"));
 const Blog = lazy(() => import("./pages/Blog"));
 const BlogPost = lazy(() => import("./pages/BlogPost"));
 const Reviews = lazy(() => import("./pages/Reviews"));
+const Services = lazy(() => import("./pages/Services"));
 
 // Loading Component
 const PageLoader = () => (
@@ -93,6 +96,7 @@ const Layout = ({ children }) => {
       </div>
 
       {!isAdmin && !isDestinationsPicker && <Footer />}
+      {!isAdmin && <FloatingContact />}
       {!isAdmin && <CookieBanner />}
       {!isAdmin && <HotPackagePopup />}
     </div>
@@ -112,9 +116,11 @@ function AppRoutes() {
           <Route path="/outbound/destinations/:continentId" element={<OutboundContinent />} />
           <Route path="/outbound/destinations/:continentId/:countryId" element={<OutboundCountry />} />
           <Route path="/booking" element={<BookingPage />} />
+          <Route path="/tours/:id" element={<TourDetail />} />
           <Route path="/blog" element={<Blog />} />
           <Route path="/blog/:slug" element={<BlogPost />} />
           <Route path="/reviews" element={<Reviews />} />
+          <Route path="/services" element={<Services />} />
           <Route path="/admin" element={<AdminDashboard />} />
           <Route path="/terms" element={<TermsConditions />} />
           <Route path="/privacy" element={<PrivacyPolicy />} />

@@ -22,6 +22,7 @@ if ($uri !== '/' && file_exists($requestedPath) && !is_dir($requestedPath)) {
 // - /api/bookings, /api/bookings/{id}
 // - /api/blogs, /api/blogs/{id}, /api/blogs/slug/{slug}
 // - /api/settings
+// - /api/contact
 // - /api/upload
 // - /api/reviews, /api/reviews/{id}
 // - /api/destinations
@@ -68,6 +69,11 @@ if (preg_match('#^/api/blogs/slug/([^/]+)$#', $uri, $m)) {
 
 if ($uri === '/api/settings') {
   require __DIR__ . '/api/settings.php';
+  exit;
+}
+
+if ($uri === '/api/contact') {
+  require __DIR__ . '/api/contact.php';
   exit;
 }
 

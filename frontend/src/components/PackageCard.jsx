@@ -117,7 +117,7 @@ export default function PackageCard({ pkg, image, onViewDetails, lang }) {
             <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.1rem' }}>
               <span style={{ fontSize: '1.6rem', fontWeight: '900', color: 'hsl(var(--secondary))' }}>
                 {Number(pkg.price) > 0
-                  ? formatMoney(pkg.price, currency, { usdToLkrRate })
+                  ? formatMoney(pkg.price, currency, { usdToLkrRate, fromCurrency: pkg.currency })
                   : (t.uiContactForPrice || 'Contact us')}
               </span>
               {Number(pkg.price) > 0 && (

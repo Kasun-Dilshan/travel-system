@@ -3,6 +3,7 @@
 require_once __DIR__ . '/../utils/cors.php';
 require_once __DIR__ . '/../config/db.php';
 require_once __DIR__ . '/../utils/auth.php';
+require_once __DIR__ . '/../utils/mail.php';
 
 handleCors();
 
@@ -25,8 +26,7 @@ elseif ($method === 'POST') {
             VALUES (:tourId, :tourTitle, :clientName, :email, :phone, :bookingDate, :guests, :specialRequests, :totalPrice)";
     
     try {
-        $stmt = $pdo->prepare($sql);
-        $stmt->execute([
+        $bookingPayload = [
             'tourId' => $data['tourId'],
             'tourTitle' => $data['tourTitle'],
             'clientName' => $data['clientName'],
@@ -36,9 +36,15 @@ elseif ($method === 'POST') {
             'guests' => $data['guests'],
             'specialRequests' => $data['specialRequests'] ?? '',
             'totalPrice' => $data['totalPrice']
-        ]);
+        ];
+
+        $stmt = $pdo->prepare($sql);
+        $stmt->execute($bookingPayload);
+
+        $bookingId = $pdo->lastInsertId();
+        notifyBookingSubmitted($bookingPayload, $bookingId);
         
-        sendResponse(['message' => 'Booking submitted successfully', 'id' => $pdo->lastInsertId()], 201);
+        sendResponse(['message' => 'Booking submitted successfully', 'id' => $bookingId], 201);
     } catch (Exception $e) {
         sendResponse(['message' => 'Error: ' . $e->getMessage()], 400);
     }
@@ -52,6 +58,14 @@ elseif ($method === 'PATCH') {
     $stmt = $pdo->prepare('UPDATE bookings SET status = ? WHERE id = ?');
     $stmt->execute([$data['status'], $id]);
     sendResponse(['message' => 'Booking status updated']);
+}
+elseif ($method === 'DELETE') {
+    requireAdmin();
+    $id = $_GET['id'] ?? null;
+    if (!$id) sendResponse(['message' => 'ID required'], 400);
+    $stmt = $pdo->prepare('DELETE FROM bookings WHERE id = ?');
+    $stmt->execute([$id]);
+    sendResponse(['message' => 'Booking deleted']);
 }
 else {
     sendResponse(['message' => 'Method not allowed'], 405);

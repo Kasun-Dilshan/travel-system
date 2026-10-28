@@ -21,9 +21,13 @@ RewriteRule ^blogs/slug/([^/]+)$ blogs.php?slug=$1 [L,QSA]
 
 RewriteRule ^settings$ settings.php [L,QSA]
 
+RewriteRule ^contact$ contact.php [L,QSA]
+
 RewriteRule ^upload$ upload.php [L,QSA]
 
 RewriteRule ^reviews$ reviews.php [L,QSA]
 RewriteRule ^reviews/([0-9]+)$ reviews.php?id=$1 [L,QSA]
+
+RewriteRule ^destinations$ destinations.php [L,QSA]
 
 RewriteRule ^uploads/?$ uploads.php [L,QSA]

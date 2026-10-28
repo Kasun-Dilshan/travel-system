@@ -1,26 +1,22 @@
 import React, { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useNavigate } from 'react-router-dom';
 import { X, Flame, ArrowRight } from 'lucide-react';
 import API_URL, { mediaUrl } from '../config';
 import { useSite } from '../context/SiteContext';
 import { getLocalizationBucket } from '../utils/localization';
 import { getPackageLocalizationFallback } from '../utils/packageLocalizationFallback';
 import { formatMoney } from '../utils/money';
-import TourModal from './TourModal';
+import { isTruthyFlag } from '../utils/flags';
 
 const STORAGE_KEY = 'travel_site_hot_package_popup_dismissed';
 
-function isTruthyFlag(value) {
-  return value === true || value === 1 || value === '1';
-}
-
 export default function HotPackagePopup() {
+  const navigate = useNavigate();
   const { language, t, currency, usdToLkrRate } = useSite();
   const [hotPackages, setHotPackages] = useState([]);
   const [visible, setVisible] = useState(false);
-  const [selectedTour, setSelectedTour] = useState(null);
-  const [tourOpen, setTourOpen] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -58,16 +54,13 @@ export default function HotPackagePopup() {
   };
 
   const openTour = (pkg) => {
-    setSelectedTour(pkg);
-    setTourOpen(true);
+    const id = pkg?._id ?? pkg?.id;
+    if (!id) return;
+    dismiss();
+    navigate(`/tours/${id}`);
   };
 
-  const closeTour = () => {
-    setTourOpen(false);
-    setSelectedTour(null);
-  };
-
-  if (!visible && !tourOpen) return null;
+  if (!visible) return null;
 
   const popup = (
     <AnimatePresence>
@@ -213,7 +206,7 @@ export default function HotPackagePopup() {
                       </p>
                       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 'auto', paddingTop: '0.5rem' }}>
                         <span style={{ fontWeight: 900, fontSize: '1.1rem', color: 'hsl(var(--primary))' }}>
-                          {formatMoney(pkg.price || 0, currency, { usdToLkrRate })}
+                          {formatMoney(pkg.price || 0, currency, { usdToLkrRate, fromCurrency: pkg.currency })}
                         </span>
                         <button
                           type="button"
@@ -236,10 +229,5 @@ export default function HotPackagePopup() {
     </AnimatePresence>
   );
 
-  return (
-    <>
-      {typeof document !== 'undefined' ? createPortal(popup, document.body) : popup}
-      <TourModal isOpen={tourOpen} onClose={closeTour} tour={selectedTour} />
-    </>
-  );
+  return typeof document !== 'undefined' ? createPortal(popup, document.body) : popup;
 }

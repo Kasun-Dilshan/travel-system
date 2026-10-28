@@ -6,6 +6,7 @@ import { useSite } from '../context/SiteContext';
 import { getLocalizationBucket } from '../utils/localization';
 import { getPackageLocalizationFallback } from '../utils/packageLocalizationFallback';
 import { formatMoney } from '../utils/money';
+import { isTruthyFlag } from '../utils/flags';
 
 const CountdownTimer = ({ expiryDate, labels }) => {
   const calculateTimeLeft = () => {
@@ -86,7 +87,7 @@ export default function LimitedTimeTours({ onOpenTour }) {
     return () => { isMounted = false; };
   }, [language]);
 
-  const flashSales = dynamicPackages.filter(p => p.isLimitedTime);
+  const flashSales = dynamicPackages.filter(p => isTruthyFlag(p.isLimitedTime));
 
   const timerLabels = {
     days: t.timerDays || 'D',
@@ -250,11 +251,11 @@ export default function LimitedTimeTours({ onOpenTour }) {
                       textDecoration: 'line-through',
                       fontWeight: '600'
                     }}>
-                      {formatMoney(originalPrice, currency, { usdToLkrRate })}
+                      {formatMoney(originalPrice, currency, { usdToLkrRate, fromCurrency: pkg.currency })}
                     </span>
                     <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.25rem' }}>
                       <span style={{ fontSize: '2rem', fontWeight: '900', color: 'hsl(var(--secondary))' }}>
-                        {formatMoney(pkg.price, currency, { usdToLkrRate })}
+                        {formatMoney(pkg.price, currency, { usdToLkrRate, fromCurrency: pkg.currency })}
                       </span>
                       <span style={{ fontSize: '0.8rem', color: 'hsl(var(--foreground) / 0.5)', fontWeight: '600' }}>
                         / {t.uiPerPerson || 'person'}

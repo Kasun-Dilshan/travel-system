@@ -1,0 +1,1 @@
+import{j as t}from"./index-df0e8bb9.js";import{D as o}from"./DestinationsMegaMenu-a01f9e49.js";import"./useOutboundContinents-503e59a7.js";import"./outbound-regions-d770fe21.js";import"./SEO-df5c93a1.js";import"./earth-62873dab.js";import"./arrow-left-33e09695.js";function a(){return t.jsx(o,{})}export{a as default};

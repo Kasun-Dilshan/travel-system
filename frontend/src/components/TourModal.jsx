@@ -4,15 +4,17 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import { X, Clock, MapPin, CheckCircle2, XCircle, ShieldCheck, ChevronLeft, ChevronRight, Zap } from 'lucide-react';
 import MapComponent from './MapComponent';
+import ItineraryTimeline, { normalizeItineraryDays } from './ItineraryTimeline';
 import API_URL, { mediaUrl } from '../config';
 import { useSite } from '../context/SiteContext';
 import { getLocalizationBucket } from '../utils/localization';
 import { getPackageLocalizationFallback } from '../utils/packageLocalizationFallback';
 import { formatMoney } from '../utils/money';
+import { isTruthyFlag } from '../utils/flags';
 
 export default function TourModal({ isOpen, onClose, tour, lang }) {
   const navigate = useNavigate();
-  const [selectedDayIndex, setSelectedDayIndex] = useState(0);
+  const [expandedDays, setExpandedDays] = useState({});
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
   const [resolvedTour, setResolvedTour] = useState(null);
   const { language, t, currency, usdToLkrRate } = useSite();
@@ -77,8 +79,9 @@ export default function TourModal({ isOpen, onClose, tour, lang }) {
     .map((i) => String(i || '').trim())
     .filter(Boolean);
   const displayHighlightsRaw = localized.highlights ?? activeTour?.highlights ?? [];
-  const displayHighlights = (Array.isArray(displayHighlightsRaw) ? displayHighlightsRaw : [])
-    .map((h) => String(h || '').trim())
+  const displayHighlights = (Array.isArray(displayHighlightsRaw) ? displayHighlightsRaw : [displayHighlightsRaw])
+    .flatMap((h) => String(h || '').split(/[\n,]+/))
+    .map((h) => h.trim())
     .filter(Boolean);
 
   const itineraryArray = React.useMemo(() => {
@@ -105,25 +108,14 @@ export default function TourModal({ isOpen, onClose, tour, lang }) {
     return [];
   }, [displayItinerary]);
 
-  const hasDayObjects = Boolean(itineraryArray[0] && typeof itineraryArray[0] === 'object' && itineraryArray[0].day);
-  const selectedDay = hasDayObjects ? itineraryArray[selectedDayIndex] : null;
-  const itineraryItems = hasDayObjects
-    ? (Array.isArray(selectedDay?.activities) ? selectedDay.activities : [])
-    : itineraryArray;
+  const itineraryDays = React.useMemo(
+    () => normalizeItineraryDays(itineraryArray),
+    [itineraryArray]
+  );
 
-  const cleanedItineraryItems = React.useMemo(() => {
-    if (!Array.isArray(itineraryItems)) return [];
-    return itineraryItems
-      .map((item) => {
-        if (typeof item === 'string') return item.trim();
-        if (item && typeof item === 'object') {
-          const v = item.activity ?? item.title ?? '';
-          return typeof v === 'string' ? v.trim() : String(v || '').trim();
-        }
-        return String(item || '').trim();
-      })
-      .filter(Boolean);
-  }, [itineraryItems]);
+  const toggleDay = (idx) => {
+    setExpandedDays((prev) => ({ ...prev, [idx]: !prev[idx] }));
+  };
 
   const stops = activeTour?.route?.stops ?? [];
   const rawPath = activeTour?.route?.path ?? stops.map((s) => ({ lat: s.lat, lng: s.lng }));
@@ -142,7 +134,7 @@ export default function TourModal({ isOpen, onClose, tour, lang }) {
   React.useEffect(() => {
     if (!isOpen || !tour) return;
     setCurrentImageIndex(0);
-    setSelectedDayIndex(0);
+    setExpandedDays({});
     setResolvedTour(null);
   }, [isOpen, tour?._id, tour?.id]);
 
@@ -401,7 +393,7 @@ export default function TourModal({ isOpen, onClose, tour, lang }) {
           }}>
             {/* Header Content Info */}
             <div style={{ padding: '3rem 3rem 1rem 3rem' }}>
-              {Boolean(tour.isLimitedTime) && (
+              {isTruthyFlag(tour.isLimitedTime) && (
                 <div style={{ 
                   display: 'inline-flex', 
                   alignItems: 'center', 
@@ -454,62 +446,13 @@ export default function TourModal({ isOpen, onClose, tour, lang }) {
                 )}
 
                 {/* Itinerary */}
-                {cleanedItineraryItems.length > 0 && (
-                  <div>
-                    <h3 style={{ fontSize: '1.4rem', fontWeight: '800', marginBottom: '1.25rem', color: 'hsl(var(--secondary))' }}>
-                      {t.uiItinerary || 'Itinerary'}
-                    </h3>
-
-                    {hasDayObjects && itineraryArray.length > 1 && (
-                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', marginBottom: '1.25rem' }}>
-                        {itineraryArray.map((dayObj, idx) => {
-                          const active = idx === selectedDayIndex;
-                          const label = dayObj?.day ? String(dayObj.day) : `Day ${idx + 1}`;
-                          return (
-                            <button
-                              key={`${label}-${idx}`}
-                              type="button"
-                              onClick={() => setSelectedDayIndex(idx)}
-                              style={{
-                                padding: '0.45rem 0.85rem',
-                                borderRadius: '999px',
-                                border: active ? '1px solid hsl(var(--primary))' : '1px solid hsl(var(--glass-border))',
-                                background: active ? 'hsl(var(--primary) / 0.08)' : 'white',
-                                color: active ? 'hsl(var(--secondary))' : 'hsl(var(--foreground) / 0.7)',
-                                fontWeight: 800,
-                                fontSize: '0.85rem',
-                                cursor: 'pointer',
-                                transition: 'all 0.2s ease',
-                              }}
-                            >
-                              {label}
-                            </button>
-                          );
-                        })}
-                      </div>
-                    )}
-
-                    <div style={{
-                      backgroundColor: 'white',
-                      borderRadius: '1.5rem',
-                      border: '1px solid hsl(var(--glass-border))',
-                      padding: '1.5rem',
-                      boxShadow: 'var(--shadow-sm)',
-                    }}>
-                      {hasDayObjects && Boolean(selectedDay?.title) && (
-                        <div style={{ fontWeight: 900, color: 'hsl(var(--secondary))', marginBottom: '0.75rem' }}>
-                          {selectedDay.title}
-                        </div>
-                      )}
-                      <ul style={{ margin: 0, paddingLeft: '1.25rem', display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
-                        {cleanedItineraryItems.map((item, idx) => (
-                          <li key={`${String(item)}-${idx}`} style={{ color: 'hsl(var(--foreground) / 0.75)', fontWeight: 600, lineHeight: 1.6 }}>
-                            {item}
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  </div>
+                {itineraryDays.length > 0 && (
+                  <ItineraryTimeline
+                    title={t.uiItinerary || 'Itinerary'}
+                    days={itineraryDays}
+                    expandedDays={expandedDays}
+                    onToggle={toggleDay}
+                  />
                 )}
 
                 {/* Inclusions */}
@@ -548,30 +491,6 @@ export default function TourModal({ isOpen, onClose, tour, lang }) {
                   </div>
                 )}
 
-                {/* Route Map */}
-                <div>
-                  <h3 style={{ fontSize: '1.4rem', fontWeight: '800', marginBottom: '1rem', color: 'hsl(var(--secondary))', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                    {t.uiRouteMap || 'Route Map'}
-                  </h3>
-                  <div style={{
-                    borderRadius: '1.5rem',
-                    overflow: 'hidden',
-                    backgroundColor: 'hsl(var(--primary) / 0.03)',
-                    border: '1px solid hsl(var(--primary) / 0.1)',
-                    height: '300px'
-                  }}>
-                    {hasRoute ? (
-                      <MapComponent stops={stops} path={rawPath} dayMode={stops.some((s) => s?.day)} />
-                    ) : (
-                      <div style={{ padding: '2rem', textAlign: 'center', display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%' }}>
-                        <p style={{ color: 'hsl(var(--foreground) / 0.5)', fontSize: '0.9rem' }}>
-                          {t.uiRouteComingSoon || 'Route coordinates coming soon.'}
-                        </p>
-                      </div>
-                    )}
-                  </div>
-                </div>
-
               </div>
 
               {/* Sticky Sidebar Right (Desktop only) */}
@@ -590,7 +509,7 @@ export default function TourModal({ isOpen, onClose, tour, lang }) {
                      </span>
                      <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.25rem', margin: '0.5rem 0 1rem 0' }}>
                        <span style={{ fontSize: '2rem', fontWeight: '900', color: 'hsl(var(--secondary))' }}>
-                         {formatMoney(tour.price, currency, { usdToLkrRate })}
+                         {formatMoney(tour.price, currency, { usdToLkrRate, fromCurrency: tour.currency })}
                        </span>
                        <span style={{ color: 'hsl(var(--foreground) / 0.5)', fontWeight: '700', fontSize: '0.85rem' }}>
                          /{t.uiPerPerson || 'person'}
@@ -634,6 +553,36 @@ export default function TourModal({ isOpen, onClose, tour, lang }) {
                    )}
                 </div>
               )}
+
+              {/* Route Map — full width under content + sidebar */}
+              <div style={{ gridColumn: '1 / -1' }}>
+                <h3 style={{ fontSize: '1.4rem', fontWeight: '800', marginBottom: '1rem', color: 'hsl(var(--secondary))', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                  {t.uiRouteMap || 'Route Map'}
+                </h3>
+                <div style={{
+                  borderRadius: '1.5rem',
+                  overflow: 'hidden',
+                  backgroundColor: 'hsl(var(--primary) / 0.03)',
+                  border: '1px solid hsl(var(--primary) / 0.1)',
+                  height: isMobile ? '280px' : '420px',
+                  width: '100%',
+                }}>
+                  {hasRoute ? (
+                    <MapComponent
+                      stops={stops}
+                      path={rawPath}
+                      height="100%"
+                      dayMode={stops.some((s) => s?.day)}
+                    />
+                  ) : (
+                    <div style={{ padding: '2rem', textAlign: 'center', display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%' }}>
+                      <p style={{ color: 'hsl(var(--foreground) / 0.5)', fontSize: '0.9rem' }}>
+                        {t.uiRouteComingSoon || 'Route coordinates coming soon.'}
+                      </p>
+                    </div>
+                  )}
+                </div>
+              </div>
             </div>
             
             {/* Mobile Bottom Bar for Booking */}
@@ -653,10 +602,10 @@ export default function TourModal({ isOpen, onClose, tour, lang }) {
               }}>
                 <div>
                   <span style={{ fontSize: '0.75rem', fontWeight: '800', color: 'hsl(var(--foreground) / 0.5)', textTransform: 'uppercase' }}>
-                    {t.uiFrom || 'From'}
+                    {t.uiFrom || 'STARTING FROM'}
                   </span>
                   <div style={{ fontSize: '1.5rem', fontWeight: '900', color: 'hsl(var(--secondary))' }}>
-                    {formatMoney(tour.price, currency, { usdToLkrRate })}
+                    {formatMoney(tour.price, currency, { usdToLkrRate, fromCurrency: tour.currency })}
                   </div>
                 </div>
                 <button

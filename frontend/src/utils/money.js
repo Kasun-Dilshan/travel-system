@@ -1,5 +1,5 @@
-// Prices in this project are stored as USD numbers (see `packages.price`).
-// This helper formats for display and can convert to LKR for the UI.
+// Package prices are stored with an explicit currency (`packages.currency`, default USD).
+// Display helpers convert between USD and LKR using the live/site rate.
 
 function readNumberEnv(name, fallback) {
   try {
@@ -52,21 +52,35 @@ export async function fetchLiveUsdToLkrRate({ signal } = {}) {
   };
 }
 
-export function convertFromUsd(usdAmount, currency, { usdToLkrRate } = {}) {
-  const amount = Number(usdAmount);
-  if (!Number.isFinite(amount)) return 0;
-  const cur = normalizeCurrency(currency);
-  if (cur === 'LKR') {
-    const rate = Number.isFinite(Number(usdToLkrRate)) ? Number(usdToLkrRate) : getUsdToLkrRate();
-    return amount * rate;
-  }
-  return amount;
+function resolveRate(usdToLkrRate) {
+  return Number.isFinite(Number(usdToLkrRate)) && Number(usdToLkrRate) > 0
+    ? Number(usdToLkrRate)
+    : getUsdToLkrRate();
 }
 
-export function formatMoney(usdAmount, currency, options = {}) {
-  const cur = normalizeCurrency(currency);
-  const value = convertFromUsd(usdAmount, cur, { usdToLkrRate: options.usdToLkrRate });
-  const locale = options.locale || (cur === 'LKR' ? 'en-LK' : 'en-US');
+/** Convert an amount from one supported currency to another (via USD). */
+export function convertAmount(amount, fromCurrency, toCurrency, { usdToLkrRate } = {}) {
+  const value = Number(amount);
+  if (!Number.isFinite(value)) return 0;
+  const from = normalizeCurrency(fromCurrency);
+  const to = normalizeCurrency(toCurrency);
+  if (from === to) return value;
+
+  const rate = resolveRate(usdToLkrRate);
+  const asUsd = from === 'USD' ? value : value / rate;
+  return to === 'USD' ? asUsd : asUsd * rate;
+}
+
+/** @deprecated Prefer convertAmount — kept for older call sites that assume USD storage. */
+export function convertFromUsd(usdAmount, currency, { usdToLkrRate } = {}) {
+  return convertAmount(usdAmount, 'USD', currency, { usdToLkrRate });
+}
+
+export function formatMoney(amount, currency, options = {}) {
+  const to = normalizeCurrency(currency);
+  const from = normalizeCurrency(options.fromCurrency || 'USD');
+  const value = convertAmount(amount, from, to, { usdToLkrRate: options.usdToLkrRate });
+  const locale = options.locale || (to === 'LKR' ? 'en-LK' : 'en-US');
 
   // Current UI shows whole-number prices, so keep it consistent.
   const digits = typeof options.maximumFractionDigits === 'number'
@@ -76,14 +90,13 @@ export function formatMoney(usdAmount, currency, options = {}) {
   try {
     return new Intl.NumberFormat(locale, {
       style: 'currency',
-      currency: cur,
+      currency: to,
       maximumFractionDigits: digits,
       minimumFractionDigits: digits,
     }).format(value);
   } catch {
     // Last-resort fallback
     const rounded = Math.round(value);
-    return cur === 'LKR' ? `LKR ${rounded.toLocaleString()}` : `$${rounded.toLocaleString()}`;
+    return to === 'LKR' ? `LKR ${rounded.toLocaleString()}` : `$${rounded.toLocaleString()}`;
   }
 }
-

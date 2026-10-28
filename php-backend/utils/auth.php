@@ -41,14 +41,35 @@ function validateJWT($token, $secret) {
     return $data;
 }
 
-function getBearerToken() {
-    $token = null;
+/**
+ * Normalize raw header/body values into a bare JWT string (or null).
+ */
+function normalizeAuthToken($raw) {
+    if (!is_string($raw)) return null;
+    $raw = trim($raw);
+    if ($raw === '') return null;
+    if (preg_match('/Bearer\s+(\S+)/i', $raw, $matches)) {
+        return $matches[1];
+    }
+    // Already a bare JWT (three base64url segments).
+    if (substr_count($raw, '.') === 2) {
+        return $raw;
+    }
+    return $raw;
+}
 
-    // Some SAPIs don't expose Authorization via getallheaders().
+/**
+ * Collect JWT candidates from Authorization, X-Admin-Token, and multipart body.
+ * Order matters for preference, but isAdmin() validates each until one works.
+ */
+function getAuthTokenCandidates() {
+    $candidates = [];
+
+    $authHeader = null;
     if (isset($_SERVER['HTTP_AUTHORIZATION'])) {
-        $token = $_SERVER['HTTP_AUTHORIZATION'];
+        $authHeader = $_SERVER['HTTP_AUTHORIZATION'];
     } elseif (isset($_SERVER['REDIRECT_HTTP_AUTHORIZATION'])) {
-        $token = $_SERVER['REDIRECT_HTTP_AUTHORIZATION'];
+        $authHeader = $_SERVER['REDIRECT_HTTP_AUTHORIZATION'];
     } else {
         $headers = function_exists('getallheaders') ? getallheaders() : [];
         $normalized = [];
@@ -56,44 +77,57 @@ function getBearerToken() {
             $normalized[strtolower((string) $k)] = $v;
         }
         if (isset($normalized['authorization'])) {
-            $token = $normalized['authorization'];
+            $authHeader = $normalized['authorization'];
         }
     }
+    $t = normalizeAuthToken($authHeader);
+    if ($t !== null) $candidates[] = $t;
 
-    if ($token && preg_match('/Bearer\s+(\S+)/i', $token, $matches)) {
-        return $matches[1];
-    }
-
-    // Multipart uploads: many Apache/CGI setups strip Authorization; duplicate JWT here.
+    // Multipart uploads: many Apache/CGI setups strip Authorization.
     $xt = $_SERVER['HTTP_X_ADMIN_TOKEN'] ?? '';
-    if (is_string($xt) && $xt !== '') {
-        $xt = trim($xt);
-        if (preg_match('/Bearer\s+(\S+)/i', $xt, $m)) {
-            return $m[1];
+    $t = normalizeAuthToken($xt);
+    if ($t !== null) $candidates[] = $t;
+
+    // Also check common alternate CGI env names for the custom header.
+    foreach (['REDIRECT_HTTP_X_ADMIN_TOKEN', 'HTTP_X_ADMINTOKEN'] as $key) {
+        if (!empty($_SERVER[$key])) {
+            $t = normalizeAuthToken($_SERVER[$key]);
+            if ($t !== null) $candidates[] = $t;
         }
-        return $xt;
     }
 
-    // Last resort: same token in POST body (always parsed for multipart/form-data).
     if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' && isset($_POST['admin_token'])) {
-        $t = $_POST['admin_token'];
-        if (is_string($t) && $t !== '') {
-            $t = trim($t);
-            if (preg_match('/Bearer\s+(\S+)/i', $t, $m)) {
-                return $m[1];
-            }
-            return $t;
-        }
+        $t = normalizeAuthToken($_POST['admin_token']);
+        if ($t !== null) $candidates[] = $t;
     }
 
-    return null;
+    // Unique while preserving order.
+    $unique = [];
+    $seen = [];
+    foreach ($candidates as $c) {
+        if (isset($seen[$c])) continue;
+        $seen[$c] = true;
+        $unique[] = $c;
+    }
+    return $unique;
+}
+
+function getBearerToken() {
+    $candidates = getAuthTokenCandidates();
+    return $candidates[0] ?? null;
 }
 
 function isAdmin() {
-    $token = getBearerToken();
-    if (!$token) return false;
-    $decoded = validateJWT($token, JWT_SECRET);
-    return $decoded && isset($decoded['role']) && $decoded['role'] === 'admin';
+    if (!defined('JWT_SECRET')) {
+        return false;
+    }
+    foreach (getAuthTokenCandidates() as $token) {
+        $decoded = validateJWT($token, JWT_SECRET);
+        if ($decoded && isset($decoded['role']) && $decoded['role'] === 'admin') {
+            return true;
+        }
+    }
+    return false;
 }
 
 function requireAdmin() {

@@ -16,10 +16,11 @@ function localize(item, language) {
 }
 
 /**
- * Full-viewport destinations mega-menu:
- * Regions | Countries | Destinations preview
+ * Destinations mega-menu: Regions | Countries | Destinations preview
+ * @param {{ embedded?: boolean }} props
+ *   embedded — panel only (for use under a page section title)
  */
-export default function DestinationsMegaMenu() {
+export default function DestinationsMegaMenu({ embedded = false }) {
   const { language, t } = useSite();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -111,6 +112,265 @@ export default function DestinationsMegaMenu() {
     boxSizing: 'border-box',
   };
 
+  const filterPanel = (
+    <div
+      style={{
+        flex: 1,
+        minHeight: embedded ? (isMobile ? 'auto' : 480) : 0,
+        height: embedded ? (isMobile ? 'auto' : 'min(560px, 62vh)') : '100%',
+        width: '100%',
+        background: '#fff',
+        borderRadius: 'clamp(1rem, 2vw, 1.75rem)',
+        border: '1px solid hsl(var(--primary) / 0.1)',
+        boxShadow: '0 24px 56px -28px rgba(0,0,0,0.22)',
+        overflow: isMobile ? 'auto' : 'hidden',
+        display: 'flex',
+        flexDirection: 'column',
+      }}
+    >
+      <div
+        style={{
+          flex: 1,
+          minHeight: isMobile ? 'auto' : 0,
+          display: 'grid',
+          gridTemplateColumns: isMobile
+            ? '1fr'
+            : 'minmax(220px, 0.9fr) minmax(260px, 1.05fr) minmax(320px, 1.45fr)',
+          gridTemplateRows: isMobile ? 'auto' : '1fr',
+          width: '100%',
+          height: isMobile ? 'auto' : '100%',
+        }}
+      >
+        {/* Regions */}
+        <div
+          style={{
+            ...columnBase,
+            borderRight: isMobile ? 'none' : '1px solid hsl(var(--foreground) / 0.08)',
+            borderBottom: isMobile ? '1px solid hsl(var(--foreground) / 0.08)' : 'none',
+          }}
+        >
+          <div style={headerStyle}>{t.outboundRegionsHeading || 'Regions'}</div>
+          <nav
+            aria-label={t.outboundRegionsHeading || 'Regions'}
+            style={{ overflowY: isMobile ? 'visible' : 'auto', flex: 1, minHeight: 0 }}
+          >
+            {continents.map((region) => {
+              const loc = localize(region, language);
+              const active = region.id === activeRegionId;
+              return (
+                <button
+                  key={region.id}
+                  type="button"
+                  onClick={() => selectRegion(region.id)}
+                  style={{
+                    ...listItemBase,
+                    color: active ? ACTIVE : 'hsl(var(--secondary))',
+                  }}
+                >
+                  {active ? (
+                    <ChevronRight size={22} color={ACTIVE} style={{ flexShrink: 0 }} />
+                  ) : (
+                    <span style={{ width: 22, flexShrink: 0 }} />
+                  )}
+                  <span>{loc?.name || region.name}</span>
+                </button>
+              );
+            })}
+          </nav>
+        </div>
+
+        {/* Countries */}
+        <div
+          style={{
+            ...columnBase,
+            borderRight: isMobile ? 'none' : '1px solid hsl(var(--foreground) / 0.08)',
+            borderBottom: isMobile ? '1px solid hsl(var(--foreground) / 0.08)' : 'none',
+          }}
+        >
+          <div style={headerStyle}>{t.outboundCountriesHeading || 'Countries'}</div>
+          <AnimatePresence mode="wait">
+            <motion.nav
+              key={activeRegionId}
+              aria-label={t.outboundCountriesHeading || 'Countries'}
+              initial={{ opacity: 0, x: 6 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: -6 }}
+              transition={{ duration: 0.18 }}
+              style={{ overflowY: isMobile ? 'visible' : 'auto', flex: 1, minHeight: 0 }}
+            >
+              <button
+                type="button"
+                onClick={() => setHoveredCountryId(null)}
+                onMouseEnter={() => setHoveredCountryId(null)}
+                style={{
+                  ...listItemBase,
+                  color: !hoveredCountryId ? ACTIVE : 'hsl(var(--secondary))',
+                }}
+              >
+                {t.outboundAllCountries || 'All Countries'}
+              </button>
+
+              {activeRegion?.countries.map((country) => {
+                const loc = localize(country, language);
+                const active = hoveredCountryId === country.id;
+                return (
+                  <button
+                    key={country.id}
+                    type="button"
+                    onMouseEnter={() => setHoveredCountryId(country.id)}
+                    onFocus={() => setHoveredCountryId(country.id)}
+                    onClick={() => openCountry(country)}
+                    style={{
+                      ...listItemBase,
+                      color: active ? ACTIVE : 'hsl(var(--secondary))',
+                    }}
+                  >
+                    {loc?.name || country.name}
+                  </button>
+                );
+              })}
+            </motion.nav>
+          </AnimatePresence>
+        </div>
+
+        {/* Destinations preview */}
+        <div
+          style={{
+            ...columnBase,
+            background: 'linear-gradient(180deg, hsl(var(--primary) / 0.04), #fff 50%)',
+          }}
+        >
+          <div style={{ ...headerStyle, color: ACTIVE }}>
+            {t.navDestinations || 'Destinations'}
+          </div>
+
+          <AnimatePresence mode="wait">
+            <motion.div
+              key={previewCountry?.id || activeRegionId}
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -6 }}
+              transition={{ duration: 0.18 }}
+              style={{
+                flex: 1,
+                minHeight: 0,
+                display: 'flex',
+                flexDirection: 'column',
+                overflow: isMobile ? 'visible' : 'auto',
+              }}
+            >
+              {(previewCountry || activeRegion)?.image && (
+                <div
+                  style={{
+                    width: '100%',
+                    flex: isMobile ? '0 0 auto' : '1 1 52%',
+                    minHeight: isMobile ? 160 : embedded ? 180 : 220,
+                    maxHeight: isMobile ? 220 : 'none',
+                    borderRadius: 'clamp(0.85rem, 1.5vw, 1.25rem)',
+                    overflow: 'hidden',
+                    marginBottom: 'clamp(1rem, 1.8vw, 1.5rem)',
+                  }}
+                >
+                  <img
+                    src={mediaUrl((previewCountry || activeRegion).image)}
+                    alt={localizedPreview?.name || ''}
+                    style={{
+                      width: '100%',
+                      height: '100%',
+                      objectFit: 'cover',
+                      display: 'block',
+                    }}
+                  />
+                </div>
+              )}
+
+              <h3
+                style={{
+                  fontSize: 'clamp(1.6rem, 3.2vw, 2.35rem)',
+                  fontWeight: 800,
+                  color: 'hsl(var(--secondary))',
+                  margin: '0 0 clamp(0.55rem, 1vw, 0.85rem)',
+                }}
+              >
+                {localizedPreview?.name || activeRegion?.name}
+              </h3>
+
+              <p
+                style={{
+                  fontSize: 'clamp(1.05rem, 1.8vw, 1.25rem)',
+                  lineHeight: 1.65,
+                  fontStyle: 'italic',
+                  color: ACTIVE,
+                  margin: '0 0 clamp(1rem, 1.5vw, 1.35rem)',
+                  flex: '0 1 auto',
+                }}
+              >
+                {(() => {
+                  const text =
+                    localizedPreview?.description ||
+                    localizedPreview?.fullDescription ||
+                    t.outboundMegaPreviewBlurb ||
+                    'Get packed for the adventure of a lifetime.';
+                  const limit = isMobile ? 160 : embedded ? 200 : 260;
+                  return text.length > limit ? `${text.slice(0, limit).trim()}…` : text;
+                })()}
+              </p>
+
+              <div style={{ marginTop: 'auto', paddingTop: '0.75rem' }}>
+                {previewCountry ? (
+                  <button
+                    type="button"
+                    onClick={() => openCountry(previewCountry)}
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '0.5rem',
+                      padding: 'clamp(0.75rem, 1.2vw, 0.95rem) clamp(1.25rem, 2vw, 1.6rem)',
+                      borderRadius: '999px',
+                      border: 'none',
+                      background: 'hsl(var(--secondary))',
+                      color: '#fff',
+                      fontWeight: 700,
+                      cursor: 'pointer',
+                      fontFamily: 'inherit',
+                      fontSize: 'clamp(1rem, 1.5vw, 1.15rem)',
+                    }}
+                  >
+                    {t.uiLearnMore || 'Learn more'}
+                    <ChevronRight size={20} />
+                  </button>
+                ) : (
+                  <div
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '0.75rem',
+                      color: ACTIVE,
+                      opacity: 0.85,
+                    }}
+                  >
+                    <Globe2 size={36} strokeWidth={1.25} />
+                    <span style={{ fontSize: 'clamp(0.95rem, 1.4vw, 1.1rem)', fontWeight: 600 }}>
+                      {t.outboundSelectCountryHint || 'Select a country to view tours'}
+                    </span>
+                  </div>
+                )}
+              </div>
+            </motion.div>
+          </AnimatePresence>
+        </div>
+      </div>
+    </div>
+  );
+
+  if (embedded) {
+    return (
+      <div dir={language === 'ar' ? 'rtl' : 'ltr'} style={{ width: '100%' }}>
+        {filterPanel}
+      </div>
+    );
+  }
+
   return (
     <main
       dir={language === 'ar' ? 'rtl' : 'ltr'}
@@ -136,7 +396,6 @@ export default function DestinationsMegaMenu() {
         }
       />
 
-      {/* Top bar — full width */}
       <div
         style={{
           flexShrink: 0,
@@ -198,7 +457,6 @@ export default function DestinationsMegaMenu() {
         </div>
       </div>
 
-      {/* Mega menu fills remaining viewport — edge to edge */}
       <div
         style={{
           flex: 1,
@@ -209,253 +467,7 @@ export default function DestinationsMegaMenu() {
           display: 'flex',
         }}
       >
-        <div
-          style={{
-            flex: 1,
-            minHeight: 0,
-            width: '100%',
-            background: '#fff',
-            borderRadius: 'clamp(1rem, 2vw, 1.75rem)',
-            border: '1px solid hsl(var(--primary) / 0.1)',
-            boxShadow: '0 24px 56px -28px rgba(0,0,0,0.22)',
-            overflow: isMobile ? 'auto' : 'hidden',
-            display: 'flex',
-            flexDirection: 'column',
-          }}
-        >
-          <div
-            style={{
-              flex: 1,
-              minHeight: isMobile ? 'auto' : 0,
-              display: 'grid',
-              gridTemplateColumns: isMobile
-                ? '1fr'
-                : 'minmax(220px, 0.9fr) minmax(260px, 1.05fr) minmax(320px, 1.45fr)',
-              gridTemplateRows: isMobile ? 'auto' : '1fr',
-              width: '100%',
-              height: isMobile ? 'auto' : '100%',
-            }}
-          >
-            {/* Regions */}
-            <div
-              style={{
-                ...columnBase,
-                borderRight: isMobile ? 'none' : '1px solid hsl(var(--foreground) / 0.08)',
-                borderBottom: isMobile ? '1px solid hsl(var(--foreground) / 0.08)' : 'none',
-              }}
-            >
-              <div style={headerStyle}>{t.outboundRegionsHeading || 'Regions'}</div>
-              <nav
-                aria-label={t.outboundRegionsHeading || 'Regions'}
-                style={{ overflowY: isMobile ? 'visible' : 'auto', flex: 1, minHeight: 0 }}
-              >
-                {continents.map((region) => {
-                  const loc = localize(region, language);
-                  const active = region.id === activeRegionId;
-                  return (
-                    <button
-                      key={region.id}
-                      type="button"
-                      onClick={() => selectRegion(region.id)}
-                      style={{
-                        ...listItemBase,
-                        color: active ? ACTIVE : 'hsl(var(--secondary))',
-                      }}
-                    >
-                      {active ? (
-                        <ChevronRight size={22} color={ACTIVE} style={{ flexShrink: 0 }} />
-                      ) : (
-                        <span style={{ width: 22, flexShrink: 0 }} />
-                      )}
-                      <span>{loc?.name || region.name}</span>
-                    </button>
-                  );
-                })}
-              </nav>
-            </div>
-
-            {/* Countries */}
-            <div
-              style={{
-                ...columnBase,
-                borderRight: isMobile ? 'none' : '1px solid hsl(var(--foreground) / 0.08)',
-                borderBottom: isMobile ? '1px solid hsl(var(--foreground) / 0.08)' : 'none',
-              }}
-            >
-              <div style={headerStyle}>{t.outboundCountriesHeading || 'Countries'}</div>
-              <AnimatePresence mode="wait">
-                <motion.nav
-                  key={activeRegionId}
-                  aria-label={t.outboundCountriesHeading || 'Countries'}
-                  initial={{ opacity: 0, x: 6 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  exit={{ opacity: 0, x: -6 }}
-                  transition={{ duration: 0.18 }}
-                  style={{ overflowY: isMobile ? 'visible' : 'auto', flex: 1, minHeight: 0 }}
-                >
-                  <button
-                    type="button"
-                    onClick={() => setHoveredCountryId(null)}
-                    onMouseEnter={() => setHoveredCountryId(null)}
-                    style={{
-                      ...listItemBase,
-                      color: !hoveredCountryId ? ACTIVE : 'hsl(var(--secondary))',
-                    }}
-                  >
-                    {t.outboundAllCountries || 'All Countries'}
-                  </button>
-
-                  {activeRegion?.countries.map((country) => {
-                    const loc = localize(country, language);
-                    const active = hoveredCountryId === country.id;
-                    return (
-                      <button
-                        key={country.id}
-                        type="button"
-                        onMouseEnter={() => setHoveredCountryId(country.id)}
-                        onFocus={() => setHoveredCountryId(country.id)}
-                        onClick={() => openCountry(country)}
-                        style={{
-                          ...listItemBase,
-                          color: active ? ACTIVE : 'hsl(var(--secondary))',
-                        }}
-                      >
-                        {loc?.name || country.name}
-                      </button>
-                    );
-                  })}
-                </motion.nav>
-              </AnimatePresence>
-            </div>
-
-            {/* Destinations preview */}
-            <div
-              style={{
-                ...columnBase,
-                background: 'linear-gradient(180deg, hsl(var(--primary) / 0.04), #fff 50%)',
-              }}
-            >
-              <div style={{ ...headerStyle, color: ACTIVE }}>
-                {t.navDestinations || 'Destinations'}
-              </div>
-
-              <AnimatePresence mode="wait">
-                <motion.div
-                  key={previewCountry?.id || activeRegionId}
-                  initial={{ opacity: 0, y: 8 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -6 }}
-                  transition={{ duration: 0.18 }}
-                  style={{
-                    flex: 1,
-                    minHeight: 0,
-                    display: 'flex',
-                    flexDirection: 'column',
-                    overflow: isMobile ? 'visible' : 'auto',
-                  }}
-                >
-                  {(previewCountry || activeRegion)?.image && (
-                    <div
-                      style={{
-                        width: '100%',
-                        flex: isMobile ? '0 0 auto' : '1 1 52%',
-                        minHeight: isMobile ? 160 : 220,
-                        maxHeight: isMobile ? 220 : 'none',
-                        borderRadius: 'clamp(0.85rem, 1.5vw, 1.25rem)',
-                        overflow: 'hidden',
-                        marginBottom: 'clamp(1rem, 1.8vw, 1.5rem)',
-                      }}
-                    >
-                      <img
-                        src={mediaUrl((previewCountry || activeRegion).image)}
-                        alt={localizedPreview?.name || ''}
-                        style={{
-                          width: '100%',
-                          height: '100%',
-                          objectFit: 'cover',
-                          display: 'block',
-                        }}
-                      />
-                    </div>
-                  )}
-
-                  <h3
-                    style={{
-                      fontSize: 'clamp(1.6rem, 3.2vw, 2.35rem)',
-                      fontWeight: 800,
-                      color: 'hsl(var(--secondary))',
-                      margin: '0 0 clamp(0.55rem, 1vw, 0.85rem)',
-                    }}
-                  >
-                    {localizedPreview?.name || activeRegion?.name}
-                  </h3>
-
-                  <p
-                    style={{
-                      fontSize: 'clamp(1.05rem, 1.8vw, 1.25rem)',
-                      lineHeight: 1.65,
-                      fontStyle: 'italic',
-                      color: ACTIVE,
-                      margin: '0 0 clamp(1rem, 1.5vw, 1.35rem)',
-                      flex: '0 1 auto',
-                    }}
-                  >
-                    {(() => {
-                      const text =
-                        localizedPreview?.description ||
-                        localizedPreview?.fullDescription ||
-                        t.outboundMegaPreviewBlurb ||
-                        'Get packed for the adventure of a lifetime.';
-                      const limit = isMobile ? 160 : 260;
-                      return text.length > limit ? `${text.slice(0, limit).trim()}…` : text;
-                    })()}
-                  </p>
-
-                  <div style={{ marginTop: 'auto', paddingTop: '0.75rem' }}>
-                    {previewCountry ? (
-                      <button
-                        type="button"
-                        onClick={() => openCountry(previewCountry)}
-                        style={{
-                          display: 'inline-flex',
-                          alignItems: 'center',
-                          gap: '0.5rem',
-                          padding: 'clamp(0.75rem, 1.2vw, 0.95rem) clamp(1.25rem, 2vw, 1.6rem)',
-                          borderRadius: '999px',
-                          border: 'none',
-                          background: 'hsl(var(--secondary))',
-                          color: '#fff',
-                          fontWeight: 700,
-                          cursor: 'pointer',
-                          fontFamily: 'inherit',
-                          fontSize: 'clamp(1rem, 1.5vw, 1.15rem)',
-                        }}
-                      >
-                        {t.uiLearnMore || 'Learn more'}
-                        <ChevronRight size={20} />
-                      </button>
-                    ) : (
-                      <div
-                        style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '0.75rem',
-                          color: ACTIVE,
-                          opacity: 0.85,
-                        }}
-                      >
-                        <Globe2 size={36} strokeWidth={1.25} />
-                        <span style={{ fontSize: 'clamp(0.95rem, 1.4vw, 1.1rem)', fontWeight: 600 }}>
-                          {t.outboundSelectCountryHint || 'Select a country to view tours'}
-                        </span>
-                      </div>
-                    )}
-                  </div>
-                </motion.div>
-              </AnimatePresence>
-            </div>
-          </div>
-        </div>
+        {filterPanel}
       </div>
     </main>
   );

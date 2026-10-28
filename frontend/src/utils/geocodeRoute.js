@@ -152,6 +152,39 @@ export async function buildRouteFromItinerary(itinerary, options = {}) {
   return { stops, path };
 }
 
+/**
+ * Build { stops, path, locations } from an explicit list of place names
+ * (admin route-map inputs — not derived from itinerary text).
+ */
+export async function buildRouteFromLocations(locations = [], options = {}) {
+  const places = cleanTextLines(locations);
+  if (!places.length) return { stops: [], path: [], locations: [] };
+
+  const stops = [];
+  for (let i = 0; i < places.length; i += 1) {
+    const place = places[i];
+    const day = i + 1;
+    try {
+      const hit = await geocodeOne(place, options);
+      if (hit) {
+        stops.push({
+          day,
+          place,
+          label: `Day ${day}: ${place}`,
+          lat: hit.lat,
+          lng: hit.lng,
+        });
+      }
+      await new Promise((r) => setTimeout(r, 120));
+    } catch {
+      // skip failed lookups
+    }
+  }
+
+  const path = stops.map((s) => ({ lat: s.lat, lng: s.lng }));
+  return { stops, path, locations: places };
+}
+
 export function routeKey(route) {
   const stops = route?.stops || [];
   return stops.map((s) => `${s.day || ''}:${s.label}:${s.lat},${s.lng}`).join('|');

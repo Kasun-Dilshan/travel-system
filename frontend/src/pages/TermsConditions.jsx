@@ -122,7 +122,7 @@ const TermsConditions = () => {
       content: "Serendib Travels and Tours",
       details: [
         "Email: inbound_manager@serendibdestinations.com",
-        "Phone: 0744110416",
+        "Phone: +94 77 113 3100",
         "No.87, Pannipitiya Road, Battramulla"
       ]
     }

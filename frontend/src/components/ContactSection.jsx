@@ -8,7 +8,7 @@ const CONTACT_DATA = {
     titleKey: 'contactTitle',
     subtitleKey: 'contactSubtitle',
     address: 'No.87, Pannipitiya Road, Battramulla',
-    phone: '0744110416',
+    phone: '+94 77 113 3100',
     email: 'inbound_manager@serendibdestinations.com',
     accent: 'hsl(var(--primary))'
   },
@@ -16,8 +16,8 @@ const CONTACT_DATA = {
     titleKey: 'contactTitle',
     subtitleKey: 'contactSubtitle',
     address: 'Serendib Group of Companies',
-    phone: '+94 11 234 5678',
-    email: 'outbound@serendibdestinations.com',
+    phone: '+94 77 113 3100',
+    email: 'ticketing@serendibgroups.com',
     accent: 'hsl(var(--accent))'
   }
 };

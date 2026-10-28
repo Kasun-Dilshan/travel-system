@@ -10,7 +10,7 @@ handleCors();
 $method = $_SERVER['REQUEST_METHOD'];
 
 /**
- * Ensure destination columns exist (outbound region/country linking).
+ * Ensure destination + currency columns exist.
  * Safe to call repeatedly — skips columns that are already present.
  */
 function ensurePackageDestinationColumns($pdo): void {
@@ -26,9 +26,23 @@ function ensurePackageDestinationColumns($pdo): void {
         if (!isset($have['countryId'])) {
             $pdo->exec('ALTER TABLE packages ADD COLUMN countryId VARCHAR(64) NULL AFTER continentId');
         }
+        if (!isset($have['inboundRegionId'])) {
+            $pdo->exec('ALTER TABLE packages ADD COLUMN inboundRegionId VARCHAR(64) NULL AFTER countryId');
+        }
+        if (!isset($have['destinationId'])) {
+            $pdo->exec('ALTER TABLE packages ADD COLUMN destinationId VARCHAR(64) NULL AFTER inboundRegionId');
+        }
+        if (!isset($have['currency'])) {
+            $pdo->exec("ALTER TABLE packages ADD COLUMN currency ENUM('USD', 'LKR') NOT NULL DEFAULT 'USD' AFTER price");
+        }
     } catch (Throwable $e) {
         // Non-fatal: INSERT/UPDATE will surface a clearer error if columns are missing.
     }
+}
+
+function normalizePackageCurrency($value): string {
+    $s = strtoupper(trim((string) ($value ?? '')));
+    return $s === 'LKR' ? 'LKR' : 'USD';
 }
 
 function normalizeDestinationId($value): ?string {
@@ -89,14 +103,42 @@ function prepareData($data) {
         $data['image'] = normalizePackageImage($data['image']);
     }
     $category = isset($data['category']) ? (string) $data['category'] : '';
-    if ($category !== 'Outbound') {
-        $data['continentId'] = null;
-        $data['countryId'] = null;
-    } else {
+    if ($category === 'Outbound') {
         $data['continentId'] = normalizeDestinationId($data['continentId'] ?? null);
         $data['countryId'] = normalizeDestinationId($data['countryId'] ?? null);
+        $data['inboundRegionId'] = null;
+        $data['destinationId'] = null;
+    } elseif ($category === 'Inbound') {
+        $data['continentId'] = null;
+        $data['countryId'] = null;
+        $data['inboundRegionId'] = normalizeDestinationId($data['inboundRegionId'] ?? null);
+        $data['destinationId'] = normalizeDestinationId($data['destinationId'] ?? null);
+    } else {
+        $data['continentId'] = null;
+        $data['countryId'] = null;
+        $data['inboundRegionId'] = null;
+        $data['destinationId'] = null;
     }
+    $data['currency'] = normalizePackageCurrency($data['currency'] ?? 'USD');
     return $data;
+}
+
+/**
+ * Normalize checkbox/flag fields from request or DB (handles bool, 0/1, "0"/"1").
+ * MySQL TINYINT often arrives as the string "0", which is truthy in JavaScript.
+ */
+function toFlagBool($value): bool {
+    if (is_bool($value)) return $value;
+    if (is_int($value) || is_float($value)) return ((int) $value) === 1;
+    if (is_string($value)) {
+        $v = strtolower(trim($value));
+        return $v === '1' || $v === 'true' || $v === 'yes' || $v === 'on';
+    }
+    return false;
+}
+
+function toFlagInt($value): int {
+    return toFlagBool($value) ? 1 : 0;
 }
 
 // Helper to decode JSON fields
@@ -113,6 +155,11 @@ function formatData($row) {
     if (isset($row['image'])) {
         $row['image'] = normalizePackageImage($row['image']);
     }
+    $row['currency'] = normalizePackageCurrency($row['currency'] ?? 'USD');
+    // Return real JSON booleans so the admin UI can untick/save correctly
+    $row['featured'] = toFlagBool($row['featured'] ?? false);
+    $row['isHot'] = toFlagBool($row['isHot'] ?? false);
+    $row['isLimitedTime'] = toFlagBool($row['isLimitedTime'] ?? false);
     // Mongoose compatibility: _id vs id
     $row['_id'] = $row['id'];
     return $row;
@@ -177,10 +224,24 @@ function translatePackageBucket(array $pkg, string $lang): ?array {
             $days = [];
             $activityTexts = [];
             $activityIndex = []; // [ [dayIdx, actIdx, fieldKey], ... ]
+            $placeTexts = [];
+            $placeIndex = []; // dayIdx
+            $detailTexts = [];
+            $detailIndex = []; // dayIdx
 
             foreach ($itinerary as $dIdx => $dayObj) {
                 if (!is_array($dayObj)) continue;
                 $days[] = safeString($dayObj['day'] ?? '');
+                $places = safeString($dayObj['places'] ?? '');
+                if ($places !== '') {
+                    $placeTexts[] = $places;
+                    $placeIndex[] = $dIdx;
+                }
+                $details = safeString($dayObj['details'] ?? ($dayObj['description'] ?? ''));
+                if ($details !== '') {
+                    $detailTexts[] = $details;
+                    $detailIndex[] = $dIdx;
+                }
                 $acts = safeArray($dayObj['activities'] ?? []);
                 foreach ($acts as $aIdx => $act) {
                     if (is_string($act)) {
@@ -200,6 +261,12 @@ function translatePackageBucket(array $pkg, string $lang): ?array {
             $translatedDays = $days ? translate_list($days, $lang, 'en') : [];
             if ($days && $translatedDays === null) return null;
 
+            $translatedPlaces = $placeTexts ? translate_list($placeTexts, $lang, 'en') : [];
+            if ($placeTexts && $translatedPlaces === null) return null;
+
+            $translatedDetails = $detailTexts ? translate_list($detailTexts, $lang, 'en') : [];
+            if ($detailTexts && $translatedDetails === null) return null;
+
             $translatedActivities = $activityTexts ? translate_list($activityTexts, $lang, 'en') : [];
             if ($activityTexts && $translatedActivities === null) return null;
 
@@ -210,10 +277,27 @@ function translatePackageBucket(array $pkg, string $lang): ?array {
                 if (!is_array($dayObj)) continue;
                 if ($dayCursor < count($translatedDays)) {
                     $dayObj['day'] = $translatedDays[$dayCursor];
+                    if (isset($dayObj['title'])) {
+                        $dayObj['title'] = $translatedDays[$dayCursor];
+                    }
                 }
                 $dayCursor++;
             }
             unset($dayObj);
+
+            // Apply places translations
+            foreach ($placeIndex as $pCursor => $dIdx) {
+                if ($pCursor >= count($translatedPlaces)) break;
+                if (!isset($itineraryOut[$dIdx]) || !is_array($itineraryOut[$dIdx])) continue;
+                $itineraryOut[$dIdx]['places'] = $translatedPlaces[$pCursor];
+            }
+
+            // Apply details translations
+            foreach ($detailIndex as $dCursor => $dIdx) {
+                if ($dCursor >= count($translatedDetails)) break;
+                if (!isset($itineraryOut[$dIdx]) || !is_array($itineraryOut[$dIdx])) continue;
+                $itineraryOut[$dIdx]['details'] = $translatedDetails[$dCursor];
+            }
 
             // Apply activity translations
             $actCursor = 0;
@@ -363,6 +447,10 @@ function formatSeedRow(array $row): array {
     if (isset($row['image'])) {
         $row['image'] = normalizePackageImage($row['image']);
     }
+    $row['currency'] = normalizePackageCurrency($row['currency'] ?? 'USD');
+    $row['featured'] = toFlagBool($row['featured'] ?? false);
+    $row['isHot'] = toFlagBool($row['isHot'] ?? false);
+    $row['isLimitedTime'] = toFlagBool($row['isLimitedTime'] ?? false);
     $row['_id'] = $row['id'] ?? null;
     return $row;
 }
@@ -436,14 +524,15 @@ elseif ($method === 'POST') {
     $data = getRequestBody();
     $data = prepareData($data);
 
-    $sql = "INSERT INTO packages (title, price, image, gallery, duration, description, highlights, itinerary, inclusions, exclusions, category, continentId, countryId, type, featured, isHot, localizations, route, isLimitedTime, discountPercentage, expiryDate, seoTitle, seoDescription) 
-            VALUES (:title, :price, :image, :gallery, :duration, :description, :highlights, :itinerary, :inclusions, :exclusions, :category, :continentId, :countryId, :type, :featured, :isHot, :localizations, :route, :isLimitedTime, :discountPercentage, :expiryDate, :seoTitle, :seoDescription)";
+    $sql = "INSERT INTO packages (title, price, currency, image, gallery, duration, description, highlights, itinerary, inclusions, exclusions, category, continentId, countryId, inboundRegionId, destinationId, type, featured, isHot, localizations, route, isLimitedTime, discountPercentage, expiryDate, seoTitle, seoDescription) 
+            VALUES (:title, :price, :currency, :image, :gallery, :duration, :description, :highlights, :itinerary, :inclusions, :exclusions, :category, :continentId, :countryId, :inboundRegionId, :destinationId, :type, :featured, :isHot, :localizations, :route, :isLimitedTime, :discountPercentage, :expiryDate, :seoTitle, :seoDescription)";
     
     try {
         $stmt = $pdo->prepare($sql);
         $stmt->execute([
             'title' => $data['title'],
             'price' => $data['price'],
+            'currency' => $data['currency'] ?? 'USD',
             'image' => $data['image'],
             'gallery' => $data['gallery'] ?? '[]',
             'duration' => $data['duration'],
@@ -455,12 +544,14 @@ elseif ($method === 'POST') {
             'category' => $data['category'],
             'continentId' => $data['continentId'] ?? null,
             'countryId' => $data['countryId'] ?? null,
+            'inboundRegionId' => $data['inboundRegionId'] ?? null,
+            'destinationId' => $data['destinationId'] ?? null,
             'type' => $data['type'] ?? 'Day',
-            'featured' => isset($data['featured']) ? (int)$data['featured'] : 0,
-            'isHot' => isset($data['isHot']) ? (int)$data['isHot'] : 0,
+            'featured' => toFlagInt($data['featured'] ?? false),
+            'isHot' => toFlagInt($data['isHot'] ?? false),
             'localizations' => $data['localizations'] ?? '{}',
             'route' => $data['route'] ?? '{}',
-            'isLimitedTime' => isset($data['isLimitedTime']) ? (int)$data['isLimitedTime'] : 0,
+            'isLimitedTime' => toFlagInt($data['isLimitedTime'] ?? false),
             'discountPercentage' => $data['discountPercentage'] ?? 0,
             'expiryDate' => $data['expiryDate'] ?? null,
             'seoTitle' => $data['seoTitle'] ?? '',
@@ -489,10 +580,11 @@ elseif ($method === 'PUT') {
     $data = prepareData($data);
 
     $sql = "UPDATE packages SET 
-            title = :title, price = :price, image = :image, gallery = :gallery, 
+            title = :title, price = :price, currency = :currency, image = :image, gallery = :gallery, 
             duration = :duration, description = :description, highlights = :highlights, 
             itinerary = :itinerary, inclusions = :inclusions, exclusions = :exclusions, 
             category = :category, continentId = :continentId, countryId = :countryId,
+            inboundRegionId = :inboundRegionId, destinationId = :destinationId,
             type = :type, featured = :featured, isHot = :isHot,
             localizations = :localizations, route = :route, isLimitedTime = :isLimitedTime, 
             discountPercentage = :discountPercentage, expiryDate = :expiryDate, 
@@ -505,6 +597,7 @@ elseif ($method === 'PUT') {
             'id' => $id,
             'title' => $data['title'],
             'price' => $data['price'],
+            'currency' => $data['currency'] ?? 'USD',
             'image' => $data['image'],
             'gallery' => $data['gallery'] ?? '[]',
             'duration' => $data['duration'],
@@ -516,12 +609,14 @@ elseif ($method === 'PUT') {
             'category' => $data['category'],
             'continentId' => $data['continentId'] ?? null,
             'countryId' => $data['countryId'] ?? null,
+            'inboundRegionId' => $data['inboundRegionId'] ?? null,
+            'destinationId' => $data['destinationId'] ?? null,
             'type' => $data['type'] ?? 'Day',
-            'featured' => isset($data['featured']) ? (int)$data['featured'] : 0,
-            'isHot' => isset($data['isHot']) ? (int)$data['isHot'] : 0,
+            'featured' => toFlagInt($data['featured'] ?? false),
+            'isHot' => toFlagInt($data['isHot'] ?? false),
             'localizations' => $data['localizations'] ?? '{}',
             'route' => $data['route'] ?? '{}',
-            'isLimitedTime' => isset($data['isLimitedTime']) ? (int)$data['isLimitedTime'] : 0,
+            'isLimitedTime' => toFlagInt($data['isLimitedTime'] ?? false),
             'discountPercentage' => $data['discountPercentage'] ?? 0,
             'expiryDate' => $data['expiryDate'] ?? null,
             'seoTitle' => $data['seoTitle'] ?? '',

@@ -11,6 +11,15 @@ if ($method !== 'POST') {
     sendResponse(['message' => 'Method not allowed'], 405);
 }
 
+// When post_max_size is exceeded, PHP empties $_POST and $_FILES — which also
+// drops multipart admin_token. Detect that before auth so the message is clear.
+$contentLength = (int) ($_SERVER['CONTENT_LENGTH'] ?? 0);
+if ($contentLength > 0 && empty($_POST) && empty($_FILES)) {
+    sendResponse([
+        'message' => 'Upload exceeded server post_max_size. Try a smaller image (max 8MB).',
+    ], 413);
+}
+
 requireAdmin();
 
 if (!isset($_FILES['image'])) {
@@ -23,6 +32,10 @@ if (!is_array($file) || !isset($file['error']) || $file['error'] !== UPLOAD_ERR_
     if (isset($file['error'])) {
         if ($file['error'] === UPLOAD_ERR_INI_SIZE || $file['error'] === UPLOAD_ERR_FORM_SIZE) {
             $msg = 'File is too large';
+        } elseif ($file['error'] === UPLOAD_ERR_NO_FILE) {
+            $msg = 'No file received';
+        } elseif ($file['error'] === UPLOAD_ERR_PARTIAL) {
+            $msg = 'File upload was incomplete';
         }
     }
     sendResponse(['message' => $msg], 400);
@@ -54,22 +67,46 @@ if (!isset($allowed[$mime])) {
     sendResponse(['message' => 'Allowed types: JPEG, PNG, WebP, GIF'], 400);
 }
 
-$uploadDir = __DIR__ . '/../uploads/packages';
-if (!is_dir($uploadDir)) {
-    if (!mkdir($uploadDir, 0755, true)) {
-        sendResponse(['message' => 'Could not create upload directory'], 500);
+$type = $_POST['type'] ?? $_GET['type'] ?? 'packages';
+$type = is_string($type) ? strtolower(trim($type)) : 'packages';
+$allowedTypes = ['packages', 'reviews'];
+if (!in_array($type, $allowedTypes, true)) {
+    sendResponse(['message' => 'Invalid upload type. Allowed: packages, reviews'], 400);
+}
+
+$uploadRoot = __DIR__ . '/../uploads';
+$uploadDir = $uploadRoot . '/' . $type;
+
+if (!is_dir($uploadRoot)) {
+    // Suppress warnings — the custom error handler would otherwise turn them into a bare 500.
+    if (!@mkdir($uploadRoot, 0755, true) && !is_dir($uploadRoot)) {
+        sendResponse(['message' => 'Could not create uploads directory. Create public_html/uploads and make it writable.'], 500);
     }
 }
 
-$ext = $allowed[$mime];
-$basename = bin2hex(random_bytes(16)) . '.' . $ext;
-$dest = $uploadDir . DIRECTORY_SEPARATOR . $basename;
-
-if (!move_uploaded_file($tmp, $dest)) {
-    sendResponse(['message' => 'Failed to save file'], 500);
+if (!is_dir($uploadDir)) {
+    if (!@mkdir($uploadDir, 0755, true) && !is_dir($uploadDir)) {
+        sendResponse(['message' => 'Could not create upload directory. Create public_html/uploads/' . $type . ' and make it writable.'], 500);
+    }
 }
 
-$publicPath = '/uploads/packages/' . $basename;
+if (!is_writable($uploadDir)) {
+    sendResponse(['message' => 'Upload directory is not writable. Set write permissions on public_html/uploads/' . $type . '.'], 500);
+}
+
+$ext = $allowed[$mime];
+try {
+    $basename = bin2hex(random_bytes(16)) . '.' . $ext;
+} catch (Throwable $e) {
+    $basename = bin2hex(openssl_random_pseudo_bytes(16)) . '.' . $ext;
+}
+$dest = $uploadDir . DIRECTORY_SEPARATOR . $basename;
+
+if (!@move_uploaded_file($tmp, $dest)) {
+    sendResponse(['message' => 'Failed to save file. Check disk space and folder permissions on uploads/' . $type . '.'], 500);
+}
+
+$publicPath = '/uploads/' . $type . '/' . $basename;
 
 // Return an absolute URL so the frontend can display the image even when hosted
 // on a different origin than the PHP backend.

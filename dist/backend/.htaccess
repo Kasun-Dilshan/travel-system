@@ -30,6 +30,8 @@ RewriteRule ^api/blogs/slug/([^/]+)$ api/blogs.php?slug=$1 [L,QSA]
 
 RewriteRule ^api/settings$ api/settings.php [L,QSA]
 
+RewriteRule ^api/contact$ api/contact.php [L,QSA]
+
 RewriteRule ^api/upload$ api/upload.php [L,QSA]
 
 RewriteRule ^api/reviews$ api/reviews.php [L,QSA]

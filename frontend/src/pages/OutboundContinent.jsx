@@ -9,15 +9,14 @@ export default function OutboundContinent() {
   const { continents, isLoading } = useOutboundContinents();
   const continent = getContinentById(continentId, continents);
 
-  if (isLoading) {
-    return (
-      <div style={{ minHeight: '40vh', display: 'grid', placeItems: 'center', color: '#64748b' }}>
-        Loading…
-      </div>
-    );
-  }
-
   if (!continent) {
+    if (isLoading) {
+      return (
+        <div style={{ minHeight: '40vh', display: 'grid', placeItems: 'center', color: '#64748b' }}>
+          Loading…
+        </div>
+      );
+    }
     return <Navigate to="/outbound/destinations" replace />;
   }
 

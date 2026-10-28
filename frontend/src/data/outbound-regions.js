@@ -674,7 +674,8 @@ export function getContinentById(continentId, continents = OUTBOUND_CONTINENTS) 
 export function getCountryById(continentId, countryId, continents = OUTBOUND_CONTINENTS) {
   const continent = getContinentById(continentId, continents);
   if (!continent) return { continent: null, country: null };
-  const country = continent.countries.find((c) => c.id === countryId) || null;
+  const countries = Array.isArray(continent.countries) ? continent.countries : [];
+  const country = countries.find((c) => c.id === countryId) || null;
   return { continent, country };
 }
 
@@ -682,6 +683,11 @@ export function getCountryById(continentId, countryId, continents = OUTBOUND_CON
  * Prefer API catalog; fill empty rich fields (images/highlights/localizations)
  * from the static seed when IDs match.
  */
+function asLocalizationMap(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+  return value;
+}
+
 export function mergeContinentsWithFallback(apiContinents, fallback = OUTBOUND_CONTINENTS) {
   if (!Array.isArray(apiContinents) || apiContinents.length === 0) {
     return fallback;
@@ -695,8 +701,8 @@ export function mergeContinentsWithFallback(apiContinents, fallback = OUTBOUND_C
       image: region.image || fbRegion?.image || '',
       description: region.description || fbRegion?.description || '',
       localizations: {
-        ...(fbRegion?.localizations || {}),
-        ...(region.localizations || {}),
+        ...asLocalizationMap(fbRegion?.localizations),
+        ...asLocalizationMap(region.localizations),
       },
       countries: (region.countries || []).map((country) => {
         const fbCountry = fbRegion?.countries?.find((c) => c.id === country.id);
@@ -714,8 +720,8 @@ export function mergeContinentsWithFallback(apiContinents, fallback = OUTBOUND_C
           description: country.description || fbCountry?.description || '',
           fullDescription: country.fullDescription || fbCountry?.fullDescription || '',
           localizations: {
-            ...(fbCountry?.localizations || {}),
-            ...(country.localizations || {}),
+            ...asLocalizationMap(fbCountry?.localizations),
+            ...asLocalizationMap(country.localizations),
           },
         };
       }),
@@ -740,6 +746,149 @@ export function filterPackagesByCountry(packages, country, continentId = null) {
     const haystack = `${pkg.title || ''} ${pkg.description || ''}`.toLowerCase();
     return keys.some((key) => haystack.includes(key));
   });
+}
+
+const SRI_LANKA_SEARCH = {
+  id: 'sri-lanka',
+  name: 'Sri Lanka',
+  matchKeys: ['sri lanka', 'srilanka', 'ceylon', 'lanka'],
+};
+
+function countrySearchTokens(country) {
+  const tokens = [country?.name, country?.id, ...(country?.matchKeys || [])];
+  const locs = country?.localizations && typeof country.localizations === 'object'
+    ? Object.values(country.localizations)
+    : [];
+  locs.forEach((loc) => {
+    if (loc?.name) tokens.push(loc.name);
+  });
+  return tokens
+    .filter(Boolean)
+    .map((t) => String(t).toLowerCase().trim())
+    .filter(Boolean);
+}
+
+function countryMatchesQuery(country, query) {
+  const q = query.trim().toLowerCase();
+  if (!q) return false;
+  return countrySearchTokens(country).some((token) => {
+    if (token === q || token.startsWith(q)) return true;
+    // Require at least 3 chars before substring match to avoid noisy hits (e.g. "uk")
+    if (q.length >= 3 && token.includes(q)) return true;
+    return false;
+  });
+}
+
+/** Flatten continent → country entries for search. */
+export function flattenDestinationCountries(continents = OUTBOUND_CONTINENTS) {
+  const list = [];
+  (continents || []).forEach((continent) => {
+    (continent.countries || []).forEach((country) => {
+      list.push({ country, continentId: continent.id, continentName: continent.name });
+    });
+  });
+  return list;
+}
+
+function packageTextTokens(pkg) {
+  const texts = [
+    pkg?.title,
+    pkg?.location,
+    pkg?.destinationId,
+    pkg?.countryId,
+    pkg?.continentId,
+  ];
+  const locMaps = [pkg?.localizations, pkg?.translations, pkg?.i18n];
+  locMaps.forEach((map) => {
+    if (!map || typeof map !== 'object') return;
+    Object.values(map).forEach((loc) => {
+      if (!loc || typeof loc !== 'object') return;
+      if (loc.title) texts.push(loc.title);
+      if (loc.location) texts.push(loc.location);
+    });
+  });
+  return texts
+    .filter(Boolean)
+    .map((t) => String(t).toLowerCase().trim().replace(/[-_]+/g, ' '))
+    .filter(Boolean);
+}
+
+/** Match a tour by its title, location, or destination id. */
+function packageTextMatchesQuery(pkg, query) {
+  const q = String(query || '').trim().toLowerCase();
+  if (q.length < 2) return false;
+  return packageTextTokens(pkg).some((token) => {
+    if (token === q || token.startsWith(q)) return true;
+    if (q.length >= 3 && token.includes(q)) return true;
+    return false;
+  });
+}
+
+/**
+ * Find tours whose destination country name (or aliases) or tour name matches the query.
+ * Also matches Sri Lanka inbound tours for sri lanka / ceylon-style queries.
+ * Empty query returns all packages.
+ */
+export function filterPackagesByCountryName(packages, continents, query) {
+  if (!packages?.length) return [];
+  const q = String(query || '').trim().toLowerCase();
+  if (!q) return packages;
+
+  const matched = flattenDestinationCountries(continents).filter(({ country }) =>
+    countryMatchesQuery(country, q)
+  );
+
+  const includeInbound = countryMatchesQuery(SRI_LANKA_SEARCH, q);
+  const results = [];
+  const seen = new Set();
+
+  const pushUnique = (pkg) => {
+    const key = String(pkg._id ?? pkg.id ?? '');
+    if (key && seen.has(key)) return;
+    if (key) seen.add(key);
+    results.push(pkg);
+  };
+
+  matched.forEach(({ country, continentId }) => {
+    filterPackagesByCountry(packages, country, continentId).forEach(pushUnique);
+  });
+
+  if (includeInbound) {
+    packages
+      .filter((pkg) => pkg.category === 'Inbound')
+      .forEach(pushUnique);
+  }
+
+  packages.forEach((pkg) => {
+    if (packageTextMatchesQuery(pkg, q)) pushUnique(pkg);
+  });
+
+  return results;
+}
+
+/** Countries whose name/aliases match the query (for search suggestions). */
+export function findCountriesByName(continents, query, limit = 8) {
+  const q = String(query || '').trim().toLowerCase();
+  if (!q) return [];
+  const hits = flattenDestinationCountries(continents)
+    .filter(({ country }) => countryMatchesQuery(country, q))
+    .map(({ country, continentId, continentName }) => ({
+      id: country.id,
+      name: country.name,
+      continentId,
+      continentName,
+    }));
+
+  if (countryMatchesQuery(SRI_LANKA_SEARCH, q)) {
+    hits.unshift({
+      id: SRI_LANKA_SEARCH.id,
+      name: SRI_LANKA_SEARCH.name,
+      continentId: 'inbound',
+      continentName: 'Inbound',
+    });
+  }
+
+  return hits.slice(0, limit);
 }
 
 export function mergeOutboundPackages(apiPackages = [], demoPackages = []) {
